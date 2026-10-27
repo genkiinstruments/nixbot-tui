@@ -9,6 +9,7 @@ use nixbot_tui::{
     app::{Row, Scope, sort_rows},
     config,
     format::{age, glyph, progress_text, short_sha},
+    jump::{self, Selector},
     runtime,
     tasks::{Tasks, pr_info},
 };
@@ -17,6 +18,26 @@ use nixbot_tui::{
 #[derive(Debug, Parser)]
 #[command(version, about)]
 struct Cli {
+    /// Open this build; its repository is -R or the current checkout's origin.
+    #[arg(conflicts_with = "dump")]
+    build: Option<u64>,
+    /// The build's repository.
+    #[arg(
+        short = 'R',
+        long,
+        value_name = "[FORGE/]OWNER/NAME",
+        requires = "build"
+    )]
+    repo: Option<String>,
+    /// Open this attribute's log: its name or an unambiguous part of it.
+    #[arg(long, requires = "build", conflicts_with = "effect")]
+    attr: Option<String>,
+    /// Open this effect's log: its name, kind/name, or an unambiguous part of it.
+    #[arg(long, requires = "build")]
+    effect: Option<String>,
+    /// Follow the opened log live.
+    #[arg(short, long, requires = "build")]
+    follow: bool,
     /// Print the builds list once and exit instead of starting the TUI.
     #[arg(long)]
     dump: bool,
@@ -27,7 +48,15 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let Cli { dump, active } = Cli::parse();
+    let Cli {
+        build,
+        repo,
+        attr,
+        effect,
+        follow,
+        dump,
+        active,
+    } = Cli::parse();
     let clients = config::load()?
         .into_iter()
         .map(|host| {
@@ -45,7 +74,19 @@ async fn main() -> Result<()> {
         };
     }
 
-    runtime::run(clients).await
+    let startup = match build {
+        Some(number) => {
+            let selector = match (&attr, &effect) {
+                (Some(attr), _) => Selector::Attr(attr),
+                (None, Some(effect)) => Selector::Effect(effect),
+                (None, None) => Selector::Build,
+            };
+            Some(jump::resolve(&clients, repo.as_deref(), number, selector, follow).await?)
+        }
+        None => None,
+    };
+
+    runtime::run(clients, startup).await
 }
 
 async fn dump_rows(clients: Vec<Client>, scope: Scope) -> Result<()> {

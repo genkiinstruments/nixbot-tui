@@ -3,6 +3,7 @@ pub mod api;
 pub mod app;
 pub mod config;
 pub mod format;
+pub mod jump;
 pub mod runtime;
 pub mod tasks;
 pub mod ui;

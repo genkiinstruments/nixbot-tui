@@ -653,3 +653,28 @@ fn ctrl_c_always_quits() {
     )));
     assert!(app.should_quit);
 }
+
+#[test]
+fn opening_a_build_from_the_command_line_lands_on_the_log() {
+    let start = Instant::now();
+    let row = queue_rows().remove(0);
+
+    let mut app = App::new(start);
+    let cmds = app.open_build(row.clone(), effects_detail(), Jump::Effect(25034), false);
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::Follow { .. }]),
+        "a running effect is followed: {cmds:?}"
+    );
+    assert_eq!(app.detail.as_ref().unwrap().pane, Pane::Effects);
+
+    let mut app = App::new(start);
+    let attr = Jump::Attr("checks.aarch64-linux.server".into());
+    let cmds = app.open_build(row.clone(), running_detail(), attr, false);
+    assert!(matches!(cmds.as_slice(), [Cmd::LoadLog { .. }]), "{cmds:?}");
+
+    let mut app = App::new(start);
+    assert_eq!(app.open_build(row, running_detail(), Jump::Build, true), []);
+    assert!(app.log.is_none());
+    press(&mut app, KeyCode::Esc);
+    assert!(app.detail.is_none(), "Esc goes on to the builds list");
+}

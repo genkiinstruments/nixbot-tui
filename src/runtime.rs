@@ -11,25 +11,42 @@ use tokio::sync::mpsc;
 use crate::{
     api::Client,
     app::{App, Feed, LogView, Msg},
+    jump::Startup,
     tasks::Tasks,
     ui,
 };
 
 const TICK: Duration = Duration::from_secs(1);
 
-pub async fn run(clients: Vec<Client>) -> Result<()> {
+pub async fn run(clients: Vec<Client>, startup: Option<Startup>) -> Result<()> {
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, clients).await;
+    let result = event_loop(&mut terminal, clients, startup).await;
     ratatui::restore();
     result
 }
 
-async fn event_loop(terminal: &mut DefaultTerminal, clients: Vec<Client>) -> Result<()> {
+async fn event_loop(
+    terminal: &mut DefaultTerminal,
+    clients: Vec<Client>,
+    startup: Option<Startup>,
+) -> Result<()> {
     let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
     let tasks = Tasks::new(clients, msg_tx);
     tasks.watch_events();
 
     let mut app = App::new(Instant::now());
+
+    if let Some(Startup {
+        row,
+        detail,
+        jump,
+        should_follow,
+    }) = startup
+    {
+        for cmd in app.open_build(row, detail, jump, should_follow) {
+            tasks.spawn(cmd);
+        }
+    }
     let mut terminal_events = EventStream::new();
     let mut ticks = tokio::time::interval(TICK);
 

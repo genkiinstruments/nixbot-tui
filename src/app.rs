@@ -89,6 +89,14 @@ pub enum Scope {
     Active,
 }
 
+/// Where `nixbot-tui <BUILD>` starts within the build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Jump {
+    Build,
+    Attr(String),
+    Effect(u64),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogSource {
     Attr(String),
@@ -569,6 +577,34 @@ impl App {
         vec![]
     }
 
+    /// Opens a build already loaded, and the log of `jump` in it; a running one is followed.
+    pub fn open_build(
+        &mut self,
+        row: Row,
+        detail: BuildDetail,
+        jump: Jump,
+        should_follow: bool,
+    ) -> Vec<Cmd> {
+        let key = row.key.clone();
+        self.open_detail(row);
+        self.on_detail(&key, Ok(Box::new(detail)));
+
+        let Some(view) = &mut self.detail else {
+            return vec![];
+        };
+
+        match jump {
+            Jump::Build => return vec![],
+            Jump::Attr(name) => view.select_attr(&name),
+            Jump::Effect(id) => view.select_effect(id),
+        }
+
+        let is_active = view
+            .selected_target()
+            .is_some_and(|(_, is_active)| is_active);
+        self.open_log(should_follow || is_active)
+    }
+
     fn open_detail(&mut self, row: Row) -> Vec<Cmd> {
         let key = row.key.clone();
         let mut refresh = Refresh::default();
@@ -889,6 +925,20 @@ impl DetailView {
         }
 
         self.reset_attr_selection();
+    }
+
+    fn select_attr(&mut self, name: &str) {
+        let visible = self.visible_attrs();
+        let (index, len) = (visible.iter().position(|a| a.attr == name), visible.len());
+        self.pane = Pane::Attrs;
+        select_clamped(&mut self.attrs, index, len);
+    }
+
+    fn select_effect(&mut self, id: u64) {
+        let effects = self.effects();
+        let (index, len) = (effects.iter().position(|e| e.id == id), effects.len());
+        self.pane = Pane::Effects;
+        select_clamped(&mut self.effects, index, len);
     }
 
     fn reset_attr_selection(&mut self) {

@@ -12,6 +12,18 @@ nix run github:genkiinstruments/nixbot-tui
 `nixbot-tui --dump` prints the recent builds once and exits; `--active` keeps only those still
 building or running effects.
 
+To jump straight to a build, give its number. As with `nbo`, the repository is the current
+checkout's `origin` unless `-R [forge/]owner/name` names it, and `--attr` / `--effect` take a name
+or an unambiguous part of one (`kind/name` tells effects of the same name apart):
+
+```sh
+nixbot-tui 412                          # the build
+nixbot-tui 412 --effect deploy -f       # follow an effect's log
+nixbot-tui 412 -R example/project --attr x86_64-linux.tests
+```
+
+Opening the log of anything still running follows it live.
+
 ## Configuration
 
 nixbot-tui reads the same file as the `nbo` CLI, `$XDG_CONFIG_HOME/nixbot/hosts.toml` (by default
