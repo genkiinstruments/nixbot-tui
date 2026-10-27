@@ -110,7 +110,8 @@ pub struct Repo {
     #[serde(flatten)]
     pub repo: RepoRef,
     pub url: String,
-    pub enabled: bool,
+    #[serde(rename = "enabled")]
+    pub is_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -179,7 +180,8 @@ pub struct BuildDetail {
 pub struct Attribute {
     pub attr: String,
     pub status: Status,
-    pub cached: bool,
+    #[serde(rename = "cached")]
+    pub is_cached: bool,
     pub error: Option<String>,
     pub started_at: Option<Timestamp>,
     pub finished_at: Option<Timestamp>,
@@ -325,7 +327,7 @@ mod tests {
         assert_eq!(repos.len(), 2);
         assert_eq!(repos[0].repo.to_string(), "example/project");
         assert_eq!(repos[0].repo.forge, "github");
-        assert!(repos[0].enabled);
+        assert!(repos[0].is_enabled);
     }
 
     #[test]

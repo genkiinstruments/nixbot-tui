@@ -28,16 +28,14 @@ impl fmt::Debug for Token {
 pub struct Host {
     pub url: String,
     pub token: Option<Token>,
-    /// Repository patterns such as `github.com/owner/*`; empty means every repository.
-    pub remotes: Vec<String>,
 }
 
+/// One `["https://…"]` table. `remotes` only picks a host for `nbo` inside a checkout; the TUI
+/// shows every configured host, so it is not read.
 #[derive(Debug, Default, Deserialize)]
 struct HostEntry {
     token: Option<String>,
     token_command: Option<String>,
-    #[serde(default)]
-    remotes: Vec<String>,
 }
 
 /// `$XDG_CONFIG_HOME/nixbot/hosts.toml`, the file the `nbo` CLI reads too.
@@ -55,23 +53,31 @@ pub fn load() -> Result<Vec<Host>> {
         ),
         _ => None,
     };
-    resolve(text.as_deref(), env, run_token_command).with_context(|| match &path {
-        Some(path) => format!("loading {}", path.display()),
-        None => "loading the nixbot configuration".to_owned(),
+    let url = env("NIXBOT_URL").or_else(|| git_config("nixbot.url"));
+    resolve(text.as_deref(), url, env("NIXBOT_TOKEN"), run_token_command).with_context(|| {
+        match &path {
+            Some(path) => format!("loading {}", path.display()),
+            None => "loading the nixbot configuration".to_owned(),
+        }
     })
 }
 
-/// Hosts from the file contents, with `NIXBOT_URL` / `NIXBOT_TOKEN` taking precedence.
-pub fn resolve(
+/// Hosts from the file contents. A `url` (`NIXBOT_URL` or `git config nixbot.url`) selects one
+/// host, `env_token` (`NIXBOT_TOKEN`) overrides the configured tokens, as in `nbo`.
+pub fn resolve<R>(
     toml: Option<&str>,
-    env: impl Fn(&str) -> Option<String>,
-    run: impl Fn(&str) -> Result<String>,
-) -> Result<Vec<Host>> {
+    url: Option<String>,
+    env_token: Option<String>,
+    run: R,
+) -> Result<Vec<Host>>
+where
+    R: Fn(&str) -> Result<String>,
+{
     let entries: BTreeMap<String, HostEntry> = match toml {
         Some(text) => toml::from_str(text).context("parsing hosts.toml")?,
         None => BTreeMap::new(),
     };
-    let entries: Vec<(String, HostEntry)> = match env("NIXBOT_URL") {
+    let entries: Vec<(String, HostEntry)> = match url {
         Some(url) => {
             let url = url.trim_end_matches('/').to_owned();
             let entry = entries
@@ -86,7 +92,6 @@ pub fn resolve(
     if entries.is_empty() {
         bail!("no server configured: set NIXBOT_URL or add a [\"https://…\"] table to hosts.toml");
     }
-    let env_token = env("NIXBOT_TOKEN");
     entries
         .into_iter()
         .map(|(url, entry)| {
@@ -99,7 +104,6 @@ pub fn resolve(
             Ok(Host {
                 url: url.trim_end_matches('/').to_owned(),
                 token: token.filter(|t| !t.is_empty()).map(Token),
-                remotes: entry.remotes,
             })
         })
         .collect()
@@ -123,31 +127,17 @@ pub fn run_token_command(command: &str) -> Result<String> {
     Ok(stdout.lines().next().unwrap_or_default().trim().to_owned())
 }
 
-/// Whether a repository URL matches a `remotes` pattern such as `github.com/owner/*`.
-pub fn remote_matches(pattern: &str, repo_url: &str) -> bool {
-    let options = glob::MatchOptions {
-        case_sensitive: false,
-        ..glob::MatchOptions::new()
-    };
-    glob::Pattern::new(pattern).is_ok_and(|p| p.matches_with(&remote_path(repo_url), options))
-}
-
-/// `https://github.com/o/r.git` becomes `github.com/o/r`, the form `nbo` matches against.
-fn remote_path(repo_url: &str) -> String {
-    match reqwest::Url::parse(repo_url) {
-        Ok(url) => format!(
-            "{}{}",
-            url.host_str().unwrap_or_default(),
-            url.path().trim_end_matches('/').trim_end_matches(".git")
-        ),
-        Err(_) => repo_url.to_owned(),
-    }
+fn git_config(key: &str) -> Option<String> {
+    let output = Command::new("git")
+        .args(["config", "--get", key])
+        .output()
+        .ok()?;
+    let value = String::from_utf8(output.stdout).ok()?;
+    Some(value.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
 
     const HOSTS: &str = r#"
@@ -159,111 +149,71 @@ remotes = ["github.com/example/*"]
 token = "inline"
 "#;
 
-    fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let vars: HashMap<String, String> = vars
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
-        move |key| vars.get(key).cloned()
-    }
-
     fn no_command(command: &str) -> Result<String> {
         panic!("token_command {command:?} must not run")
     }
 
+    fn host(url: &str, token: Option<&str>) -> Host {
+        Host {
+            url: url.into(),
+            token: token.map(Token::new),
+        }
+    }
+
     #[test]
     fn token_command_runs_through_the_shell() {
-        let hosts = resolve(Some(HOSTS), env(&[]), run_token_command).unwrap();
+        let hosts = resolve(Some(HOSTS), None, None, run_token_command).unwrap();
         assert_eq!(
             hosts,
-            vec![
-                Host {
-                    url: "https://nixbot.example.org".into(),
-                    token: Some(Token::new("from-command")),
-                    remotes: vec!["github.com/example/*".into()],
-                },
-                Host {
-                    url: "https://other.example.org".into(),
-                    token: Some(Token::new("inline")),
-                    remotes: vec![],
-                },
+            [
+                host("https://nixbot.example.org", Some("from-command")),
+                host("https://other.example.org", Some("inline")),
             ]
         );
     }
 
     #[test]
-    fn env_overrides_url_and_token() {
-        let hosts = resolve(
-            Some(HOSTS),
-            env(&[
-                ("NIXBOT_URL", "https://nixbot.example.org/"),
-                ("NIXBOT_TOKEN", "from-env"),
-            ]),
-            no_command,
-        )
-        .unwrap();
+    fn url_selects_one_host_and_env_token_overrides() {
+        let url = Some("https://other.example.org".into());
+        let hosts = resolve(Some(HOSTS), url.clone(), None, no_command).unwrap();
+        assert_eq!(hosts, [host("https://other.example.org", Some("inline"))]);
+        let token = Some("from-env".into());
+        let hosts = resolve(Some(HOSTS), url, token, no_command).unwrap();
+        assert_eq!(hosts, [host("https://other.example.org", Some("from-env"))]);
+    }
+
+    #[test]
+    fn trailing_slashes_still_find_the_host_entry() {
+        let url = Some("https://nixbot.example.org/".into());
+        let hosts = resolve(Some(HOSTS), url, None, run_token_command).unwrap();
         assert_eq!(
             hosts,
-            vec![Host {
-                url: "https://nixbot.example.org".into(),
-                token: Some(Token::new("from-env")),
-                remotes: vec!["github.com/example/*".into()],
-            }]
+            [host("https://nixbot.example.org", Some("from-command"))]
         );
     }
 
     #[test]
-    fn env_url_without_a_config_file() {
-        let hosts = resolve(
-            None,
-            env(&[("NIXBOT_URL", "http://localhost:8080")]),
-            no_command,
-        )
-        .unwrap();
-        assert_eq!(hosts[0].url, "http://localhost:8080");
-        assert_eq!(hosts[0].token, None);
+    fn url_without_a_config_file() {
+        let url = Some("http://localhost:8080".into());
+        let hosts = resolve(None, url, None, no_command).unwrap();
+        assert_eq!(hosts, [host("http://localhost:8080", None)]);
     }
 
     #[test]
     fn failing_token_command_is_an_error() {
         let toml = "[\"https://a.example.org\"]\ntoken_command = \"exit 3\"\n";
-        let err = resolve(Some(toml), env(&[]), run_token_command).unwrap_err();
+        let err = resolve(Some(toml), None, None, run_token_command).unwrap_err();
         assert!(format!("{err:#}").contains("exit 3"), "{err:#}");
     }
 
     #[test]
     fn nothing_configured_is_an_error() {
-        assert!(resolve(None, env(&[]), no_command).is_err());
+        assert!(resolve(None, None, None, no_command).is_err());
     }
 
     #[test]
     fn token_debug_is_redacted() {
-        let host = Host {
-            url: "u".into(),
-            token: Some(Token::new("hunter2")),
-            remotes: vec![],
-        };
+        let host = host("u", Some("hunter2"));
         assert!(!format!("{host:?}").contains("hunter2"));
-    }
-
-    #[test]
-    fn remotes_match_https_and_ssh_urls() {
-        let pattern = "github.com/Example/*";
-        assert!(remote_matches(
-            pattern,
-            "https://github.com/example/project.git"
-        ));
-        assert!(!remote_matches(
-            pattern,
-            "https://github.com/other/project.git"
-        ));
-        assert!(remote_matches(
-            "*/project",
-            "https://gitea.example.org/a/project"
-        ));
-        assert!(remote_matches(
-            "github.com/example/projec?",
-            "https://github.com/example/project"
-        ));
     }
 }
