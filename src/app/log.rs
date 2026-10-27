@@ -13,6 +13,8 @@ pub enum Feed {
     Lines(Vec<String>),
     /// Raw effect output, split anywhere.
     Chunk(String),
+    /// A stream is about to replay the log from the start.
+    Clear,
     /// The stream ended; the note says how, if there is something to say.
     End(Option<String>),
 }
@@ -106,6 +108,10 @@ impl LogView {
                     let complete = std::mem::replace(partial, rest);
                     lines.extend(complete.lines().map(sanitize));
                 }
+            }
+            Feed::Clear => {
+                lines.clear();
+                partial.clear();
             }
             Feed::End(end_note) => {
                 if !partial.is_empty() {

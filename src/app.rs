@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 use crate::{
     actions::{Action, Target, Verb},
     api::{Attribute, Build, BuildDetail, Effect, RepoRef},
-    format::Progress,
+    format::{EffectSummary, Progress},
 };
 
 pub use self::log::{Feed, LogView, Scroll};
@@ -41,6 +41,7 @@ pub struct Row {
     pub key: BuildKey,
     pub build: Build,
     pub progress: Option<Progress>,
+    pub effects: Option<EffectSummary>,
     pub build_url: String,
     /// The pull request on the forge, derived from the repository URL.
     pub pr_url: Option<String>,
@@ -60,9 +61,15 @@ impl Row {
             key,
             build,
             progress: None,
+            effects: None,
             build_url,
             pr_url,
         }
+    }
+
+    /// Still building, or done building with effects still to run.
+    pub fn is_active(&self) -> bool {
+        self.build.status.is_active() || self.effects.is_some_and(|e| e.is_active())
     }
 }
 
@@ -75,10 +82,11 @@ pub struct PrInfo {
 /// Which builds the list shows.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scope {
+    /// The most recent builds, finished or not, as `nbo build list` shows them.
     #[default]
-    Active,
-    /// Active builds and the most recent finished ones.
     Recent,
+    /// Builds still building or running effects.
+    Active,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,7 +325,7 @@ impl App {
         }
 
         if let Some(DetailView { row, refresh, .. }) = detail {
-            let poll = row.build.status.is_active().then_some(DETAIL_POLL);
+            let poll = row.is_active().then_some(DETAIL_POLL);
 
             if refresh.is_due(now, poll) {
                 refresh.start(now);
@@ -529,8 +537,8 @@ impl App {
             Char('G') | End => self.select_row(|_| usize::MAX),
             Char('a') => {
                 self.scope = match self.scope {
-                    Scope::Active => Scope::Recent,
                     Scope::Recent => Scope::Active,
+                    Scope::Active => Scope::Recent,
                 };
                 return self.load_rows();
             }
@@ -612,7 +620,13 @@ impl App {
                 view.pane = Pane::Attrs;
                 view.is_editing_filter = true;
             }
-            Enter | Char('l') | Right => return self.open_log(false),
+            Enter | Char('l') | Right => {
+                // Something still running is only worth watching live.
+                let is_active = view
+                    .selected_target()
+                    .is_some_and(|(_, is_active)| is_active);
+                return self.open_log(is_active);
+            }
             Char('f') => return self.open_log(true),
             Char(c @ ('r' | 'c')) => {
                 if let Some((target, is_active)) = view.selected_target() {
@@ -670,7 +684,7 @@ impl App {
 
                 let source = LogSource::Effect {
                     id: effect.id,
-                    label: effect.label(),
+                    label: effect.name.clone(),
                 };
                 (source, build_url.clone())
             }
@@ -763,13 +777,9 @@ impl App {
     }
 }
 
-/// Active builds first, newest first within each group.
+/// Newest first, as `nbo build list` shows them.
 pub fn sort_rows(rows: &mut [Row]) {
-    rows.sort_by(|a, b| {
-        let is_active = |r: &Row| r.build.status.is_active();
-        let by_activity = is_active(b).cmp(&is_active(a));
-        by_activity.then(b.build.created_at.cmp(&a.build.created_at))
-    });
+    rows.sort_by_key(|row| std::cmp::Reverse(row.build.created_at));
 }
 
 /// `r`/`R` restart, `c`/`C` cancel.
@@ -837,6 +847,7 @@ impl DetailView {
         } = self;
         row.build = build.clone();
         row.progress = Some(Progress::of(attributes));
+        row.effects = Some(EffectSummary::of(effects));
         *shown = Some(detail);
         *error = None;
 

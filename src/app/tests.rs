@@ -50,7 +50,7 @@ fn tick(app: &mut App, start: Instant, secs: u64) -> Vec<Cmd> {
 fn loaded() -> (App, Instant) {
     let start = Instant::now();
     let mut app = App::new(start);
-    assert_eq!(tick(&mut app, start, 0), [Cmd::LoadRows(Scope::Active)]);
+    assert_eq!(tick(&mut app, start, 0), [Cmd::LoadRows(Scope::Recent)]);
 
     app.update(Msg::Rows(Ok(queue_rows())));
     (app, start)
@@ -146,13 +146,13 @@ fn a_failed_refresh_keeps_the_rows() {
 }
 
 #[test]
-fn toggling_finished_builds_reloads_at_once() {
+fn toggling_the_active_filter_reloads_at_once() {
     let (mut app, _) = loaded();
-    assert_eq!(type_keys(&mut app, "a"), [Cmd::LoadRows(Scope::Recent)]);
+    assert_eq!(type_keys(&mut app, "a"), [Cmd::LoadRows(Scope::Active)]);
     assert_eq!(type_keys(&mut app, "a"), [], "waits for the load in flight");
 
     app.update(Msg::Rows(Ok(queue_rows())));
-    assert_eq!(app.scope, Scope::Active);
+    assert_eq!(app.scope, Scope::Recent);
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn action_results_are_flashed_then_expire_and_trigger_a_refresh() {
         "cancel the build failed: HTTP 403 Forbidden: not allowed"
     );
 
-    assert_eq!(tick(&mut app, start, 1), [Cmd::LoadRows(Scope::Active)]);
+    assert_eq!(tick(&mut app, start, 1), [Cmd::LoadRows(Scope::Recent)]);
     assert!(app.flash.is_some());
 
     tick(&mut app, start, 7);
@@ -418,11 +418,13 @@ fn effect_actions_target_one_effect_or_all() {
 }
 
 #[test]
-fn enter_tails_and_f_follows_an_attribute_log() {
+fn enter_tails_a_finished_attribute_and_f_follows_it() {
     let (mut app, _) = loaded();
     let key = open_detail(&mut app);
-    let source = LogSource::Attr("checks.aarch64-darwin.clippy".into());
+    type_keys(&mut app, "G");
+    let source = LogSource::Attr("checks.aarch64-linux.server".into());
     let load = press(&mut app, KeyCode::Enter);
+    assert_eq!(load.len(), 1, "only the history: {load:?}");
     let Cmd::LoadLog {
         key: load_key,
         source: load_source,
@@ -462,6 +464,36 @@ fn enter_tails_and_f_follows_an_attribute_log() {
         feed_tx(&follow[0]).0.is_closed(),
         "unfollowing stops the stream"
     );
+}
+
+#[test]
+fn enter_follows_what_is_still_running() {
+    let (mut app, _) = loaded();
+    open_detail(&mut app);
+    let cmds = press(&mut app, KeyCode::Enter);
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::LoadLog { .. }, Cmd::Follow { .. }]),
+        "{cmds:?}"
+    );
+    assert!(log(&app).is_following);
+
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Esc);
+    type_keys(&mut app, "g");
+    open_effects(&mut app);
+    let cmds = press(&mut app, KeyCode::Enter);
+    assert!(matches!(cmds.as_slice(), [Cmd::Follow { .. }]), "{cmds:?}");
+}
+
+#[test]
+fn a_replayed_stream_replaces_what_was_shown() {
+    let (mut app, _) = loaded();
+    open_effects(&mut app);
+    type_keys(&mut app, "f");
+    app.update(Msg::Log(Feed::Chunk("first try\n".into())));
+    app.update(Msg::Log(Feed::Clear));
+    app.update(Msg::Log(Feed::Chunk("first try\nmore\n".into())));
+    assert_eq!(log(&app).lines, ["first try", "more"]);
 }
 
 #[test]
@@ -566,7 +598,7 @@ fn status_events_refresh_on_the_next_tick_without_overlap() {
     });
     assert_eq!(
         tick(&mut app, start, 1),
-        [Cmd::LoadRows(Scope::Active), Cmd::LoadDetail(key.clone())]
+        [Cmd::LoadRows(Scope::Recent), Cmd::LoadDetail(key.clone())]
     );
 
     app.update(Msg::StatusChanged {
@@ -578,7 +610,7 @@ fn status_events_refresh_on_the_next_tick_without_overlap() {
     app.update(Msg::Detail(key.clone(), Ok(Box::new(running_detail()))));
     assert_eq!(
         tick(&mut app, start, 3),
-        [Cmd::LoadRows(Scope::Active), Cmd::LoadDetail(key)]
+        [Cmd::LoadRows(Scope::Recent), Cmd::LoadDetail(key)]
     );
 }
 
@@ -587,14 +619,14 @@ fn events_for_other_builds_leave_the_detail_alone() {
     let (mut app, start) = loaded();
     open_detail(&mut app);
     app.update(Msg::StatusChanged { build_id: Some(-1) });
-    assert_eq!(tick(&mut app, start, 1), [Cmd::LoadRows(Scope::Active)]);
+    assert_eq!(tick(&mut app, start, 1), [Cmd::LoadRows(Scope::Recent)]);
 }
 
 #[test]
 fn polling_falls_back_when_no_events_arrive() {
     let (mut app, start) = loaded();
     assert_eq!(tick(&mut app, start, 14), []);
-    assert_eq!(tick(&mut app, start, 15), [Cmd::LoadRows(Scope::Active)]);
+    assert_eq!(tick(&mut app, start, 15), [Cmd::LoadRows(Scope::Recent)]);
 }
 
 #[test]

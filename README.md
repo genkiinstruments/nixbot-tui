@@ -1,7 +1,7 @@
 # nixbot-tui
 
 A terminal UI for the [nixbot](https://github.com/Mic92/nixbot) CI server. It shows the active
-builds across every repository your token can see, the pull request behind each one, and the
+recent builds across every repository your token can see, the pull request behind each one, and the
 attributes and effects of a build. You can tail or follow their logs live and restart or cancel
 builds, attributes and effects.
 
@@ -9,8 +9,8 @@ builds, attributes and effects.
 nix run github:genkiinstruments/nixbot-tui
 ```
 
-`nixbot-tui --dump` prints the builds list once and exits; add `--all` to include recently
-finished builds.
+`nixbot-tui --dump` prints the recent builds once and exits; `--active` keeps only those still
+building or running effects.
 
 ## Configuration
 
@@ -38,7 +38,7 @@ logged in.
 | -------- | ---------------- | --------------------------------------------------- |
 | builds   | `j`/`k`, `↑`/`↓` | move (`g`/`G` first/last)                           |
 |          | `⏎`              | open the build                                      |
-|          | `a`              | include recently finished builds                    |
+|          | `a`              | only builds still building or running effects, or all |
 |          | `r` / `c`        | restart / cancel the build                          |
 |          | `o` / `b`        | open the pull request / the build page              |
 | build    | `Tab`            | switch between attributes and effects               |

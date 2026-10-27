@@ -1,0 +1,17 @@
+event: text
+data: {"text":"building '/nix/store/q2m8f0dz4x6vy3h1k9w7c5b0n8r2s4t6-effect-env.drv'...\nconnecting to the signing host...\n"}
+
+event: text
+data: {"text":"signing the bundles...\n"}
+
+event: text
+data: {"text":"signed project.app\npackag"}
+
+: keepalive
+
+event: text
+data: {"text":"ing done\n"}
+
+event: done
+data: {}
+

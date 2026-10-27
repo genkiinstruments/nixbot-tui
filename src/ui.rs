@@ -14,8 +14,7 @@ use crate::{
     format::{age, glyph, progress_text, queue_note, short_sha},
 };
 
-const LIST_KEYS: &str =
-    "j/k move · ⏎ open · a finished · r restart · c cancel · o PR · b build page · ? help · q quit";
+const LIST_KEYS: &str = "j/k move · ⏎ open · a active only · r restart · c cancel · o PR · b build page · ? help · q quit";
 const DETAIL_KEYS: &str = "⏎ log · f follow · Tab pane · / filter · r/c item · R/C build · \
      E/X effects · o PR · ? help · q back";
 const LOG_KEYS: &str = "f follow · j/k scroll · g/G top/end · r/c restart/cancel · o web · q back";
@@ -75,18 +74,25 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 fn header_line(app: &App) -> Line<'_> {
-    let active = app
+    let building = app
         .rows
         .iter()
         .filter(|r| r.build.status.is_active())
         .count();
+    let running_effects = app
+        .rows
+        .iter()
+        .filter(|r| !r.build.status.is_active() && r.effects.is_some_and(|e| e.is_active()))
+        .count();
     let scope = match app.scope {
+        Scope::Recent => "recent builds",
         Scope::Active => "active builds",
-        Scope::Recent => "active and recent builds",
     };
     let mut spans = vec![
         Span::from(" nixbot ").bold().reversed(),
-        Span::from(format!(" {active} active · showing {scope} ")),
+        Span::from(format!(
+            " {building} building · {running_effects} running effects · showing {scope} "
+        )),
     ];
 
     if let Some(err) = &app.rows_error {
@@ -134,7 +140,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
     if app.rows.is_empty() {
         let text = match (app.is_loaded, app.scope) {
             (false, _) => "loading…",
-            (true, Scope::Active) => "no active builds · press a to show recent ones",
+            (true, Scope::Active) => "nothing building or running effects · a shows recent builds",
             (true, Scope::Recent) => "no builds",
         };
         frame.render_widget(Paragraph::new(text).dark_gray().block(block), area);
@@ -171,6 +177,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
                 Cell::from(pr.unwrap_or_default()),
                 Cell::from(short_sha(&build.commit_sha).to_owned()).dark_gray(),
                 Cell::from(progress_text(build, row.progress)).style(status_style(&build.status)),
+                effects_cell(row),
                 Cell::from(age(build.created_at, now)).dark_gray(),
             ])
         })
@@ -186,6 +193,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Fill(1),
             Constraint::Length(8),
             Constraint::Length(13),
+            Constraint::Length(11),
             Constraint::Length(6),
         ],
     )
@@ -198,6 +206,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
             "pull request",
             "commit",
             "progress",
+            "effects",
             "age",
         ])
         .bold(),
@@ -205,6 +214,20 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
     .row_highlight_style(Modifier::REVERSED)
     .block(block);
     frame.render_stateful_widget(table, area, &mut app.table);
+}
+
+fn effects_cell(row: &Row) -> Cell<'static> {
+    let Some(effects) = row.effects else {
+        return Cell::default();
+    };
+
+    let style = match effects {
+        e if e.running > 0 => Style::new().yellow(),
+        e if e.failed > 0 => Style::new().red(),
+        e if e.queued > 0 => Style::new().dark_gray(),
+        _ => Style::new().green(),
+    };
+    Cell::from(effects.to_string()).style(style)
 }
 
 fn draw_detail(frame: &mut Frame, area: Rect, view: &mut DetailView, pr_title: Option<&str>) {
@@ -353,6 +376,8 @@ fn draw_effects(frame: &mut Frame, area: Rect, view: &mut DetailView) {
         .iter()
         .map(|effect| {
             let Effect {
+                kind,
+                name,
                 status,
                 started_at,
                 finished_at,
@@ -361,7 +386,8 @@ fn draw_effects(frame: &mut Frame, area: Rect, view: &mut DetailView) {
 
             TableRow::new([
                 status_cell(status),
-                Cell::from(effect.label()),
+                Cell::from(name.clone()),
+                Cell::from(kind.clone()).dark_gray(),
                 Cell::from(status.label().to_owned()).style(status_style(status)),
                 Cell::from(duration(*started_at, *finished_at)).dark_gray(),
             ])
@@ -373,6 +399,7 @@ fn draw_effects(frame: &mut Frame, area: Rect, view: &mut DetailView) {
         [
             Constraint::Length(1),
             Constraint::Fill(1),
+            Constraint::Length(12),
             Constraint::Length(10),
             Constraint::Length(7),
         ],
@@ -414,7 +441,12 @@ fn draw_log(frame: &mut Frame, area: Rect, log: &LogView) {
     }
 
     let text: Vec<Line> = if shown.is_empty() {
-        vec![Line::from("waiting for output…").dark_gray()]
+        let placeholder = if *is_following {
+            "waiting for output…"
+        } else {
+            "no output · f follows it live"
+        };
+        vec![Line::from(placeholder).dark_gray()]
     } else {
         shown.iter().map(|line| ansi_line(line)).collect()
     };
@@ -464,7 +496,7 @@ fn help() -> Text<'static> {
         section("builds"),
         key("j/k ↑/↓ g/G", "move, first, last"),
         key("⏎ l", "open the build"),
-        key("a", "include recent finished builds"),
+        key("a", "only builds still building or running effects, or all"),
         key("r / c", "restart / cancel the build"),
         key("o / b", "open the pull request / the build page"),
         section("build"),

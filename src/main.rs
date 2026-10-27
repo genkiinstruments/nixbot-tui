@@ -20,14 +20,14 @@ struct Cli {
     /// Print the builds list once and exit instead of starting the TUI.
     #[arg(long)]
     dump: bool,
-    /// With --dump, include recently finished builds.
-    #[arg(long, short, requires = "dump")]
-    all: bool,
+    /// With --dump, only builds still building or running effects.
+    #[arg(long, requires = "dump")]
+    active: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let Cli { dump, all } = Cli::parse();
+    let Cli { dump, active } = Cli::parse();
     let clients = config::load()?
         .into_iter()
         .map(|host| {
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
 
     if dump {
-        let scope = if all { Scope::Recent } else { Scope::Active };
+        let scope = if active { Scope::Active } else { Scope::Recent };
 
         return match dump_rows(clients, scope).await {
             // `--dump | head` closing the pipe early is not a failure.
@@ -59,6 +59,7 @@ async fn dump_rows(clients: Vec<Client>, scope: Scope) -> Result<()> {
         key,
         build,
         progress,
+        effects,
         ..
     } in rows
     {
@@ -70,10 +71,11 @@ async fn dump_rows(clients: Vec<Client>, scope: Scope) -> Result<()> {
             None => String::new(),
         };
         let progress = progress_text(&build, progress);
+        let effects = effects.map(|e| e.to_string()).unwrap_or_default();
 
         writeln!(
             out,
-            "{} {:<11} #{:<5} {:<28} {:<32} {:<8} {:<12} {:>6}  {pr}",
+            "{} {:<11} #{:<5} {:<28} {:<32} {:<8} {:<12} {:<10} {:>6}  {pr}",
             glyph(&build.status),
             build.status.label(),
             build.number,
@@ -81,6 +83,7 @@ async fn dump_rows(clients: Vec<Client>, scope: Scope) -> Result<()> {
             build.branch,
             short_sha(&build.commit_sha),
             progress,
+            effects,
             age(build.created_at, now),
         )?;
     }

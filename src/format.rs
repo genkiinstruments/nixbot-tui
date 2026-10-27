@@ -5,7 +5,7 @@ use jiff::{
     fmt::friendly::{Designator, Spacing, SpanPrinter},
 };
 
-use crate::api::{Attribute, Build, Outcome, Status};
+use crate::api::{Attribute, Build, Effect, Outcome, Status};
 
 /// The glyphs `nbo` prints, which counts a cancellation as a failure too.
 pub fn glyph(status: &Status) -> &'static str {
@@ -76,6 +76,60 @@ impl std::fmt::Display for Progress {
     }
 }
 
+/// Effect counts for the builds list: effects keep running after the build is done.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EffectSummary {
+    pub total: usize,
+    pub running: usize,
+    pub queued: usize,
+    pub failed: usize,
+}
+
+impl EffectSummary {
+    pub fn of(effects: &[Effect]) -> Self {
+        let count = |outcome: Outcome| {
+            effects
+                .iter()
+                .filter(|e| e.status.outcome() == outcome)
+                .count()
+        };
+
+        Self {
+            total: effects.len(),
+            running: count(Outcome::Running),
+            queued: count(Outcome::Queued),
+            failed: effects.iter().filter(|e| e.status.is_failure()).count(),
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.running + self.queued > 0
+    }
+}
+
+/// `⏵2 ·3 ✗1` while effects run or failed, `✓5` once all succeeded.
+impl std::fmt::Display for EffectSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            total,
+            running,
+            queued,
+            failed,
+        } = *self;
+        let parts: Vec<String> = [("⏵", running), ("·", queued), ("✗", failed)]
+            .into_iter()
+            .filter(|&(_, n)| n > 0)
+            .map(|(glyph, n)| format!("{glyph}{n}"))
+            .collect();
+
+        match (parts.is_empty(), total) {
+            (_, 0) => Ok(()),
+            (true, total) => write!(f, "✓{total}"),
+            (false, _) => f.write_str(&parts.join(" ")),
+        }
+    }
+}
+
 /// `queued for eval (pos N) behind owner/repo#N`, as `nbo` says it.
 pub fn queue_note(build: &Build) -> Option<String> {
     let queue = build.eval_queue.as_ref()?;
@@ -124,6 +178,33 @@ mod tests {
         for (since, expected) in cases {
             assert_eq!(age(since.parse().unwrap(), now), expected, "{since}");
         }
+    }
+
+    #[test]
+    fn effect_summary_shows_what_is_still_going() {
+        let detail: crate::api::BuildDetail =
+            serde_json::from_str(include_str!("../tests/fixtures/build_effects.json")).unwrap();
+        let summary = EffectSummary::of(&detail.effects);
+        assert_eq!(
+            summary,
+            EffectSummary {
+                total: 9,
+                running: 1,
+                queued: 4,
+                failed: 0
+            }
+        );
+        assert!(summary.is_active());
+        assert_eq!(summary.to_string(), "⏵1 ·4");
+
+        let done = EffectSummary {
+            running: 0,
+            queued: 0,
+            ..summary
+        };
+        assert!(!done.is_active());
+        assert_eq!(done.to_string(), "✓9");
+        assert_eq!(EffectSummary::default().to_string(), "");
     }
 
     #[test]
