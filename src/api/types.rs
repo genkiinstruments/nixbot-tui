@@ -166,7 +166,6 @@ impl QueueEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct BuildPage {
     pub items: Vec<Build>,
-    pub has_next: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -211,8 +210,6 @@ impl Effect {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct EffectRun {
-    pub id: u64,
-    pub name: String,
     pub status: Status,
     pub error: Option<String>,
     pub skip_reason: Option<String>,
@@ -346,7 +343,6 @@ mod tests {
     #[test]
     fn decodes_build_page() {
         let page: BuildPage = fixture(include_str!("../../tests/fixtures/builds.json"));
-        assert!(page.has_next);
         let statuses: Vec<_> = page.items.iter().map(|b| b.status.clone()).collect();
         assert_eq!(
             statuses,

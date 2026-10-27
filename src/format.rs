@@ -5,15 +5,17 @@ use jiff::{
     fmt::friendly::{Designator, Spacing, SpanPrinter},
 };
 
-use crate::api::{Attribute, Outcome, Status};
+use crate::api::{Attribute, Build, Outcome, Status};
 
+/// The glyphs `nbo` prints, which counts a cancellation as a failure too.
 pub fn glyph(status: &Status) -> &'static str {
+    use Outcome::*;
+
     match status.outcome() {
-        Outcome::Failed => "✗",
-        Outcome::Cancelled => "⊘",
-        Outcome::Running => "⏵",
-        Outcome::Queued => "·",
-        Outcome::Succeeded => "✓",
+        Failed | Cancelled => "✗",
+        Running => "⏵",
+        Queued => "·",
+        Succeeded => "✓",
     }
 }
 
@@ -74,6 +76,37 @@ impl std::fmt::Display for Progress {
     }
 }
 
+/// `queued for eval (pos N) behind owner/repo#N`, as `nbo` says it.
+pub fn queue_note(build: &Build) -> Option<String> {
+    let queue = build.eval_queue.as_ref()?;
+    let position = queue.position.map(|p| format!(" (pos {p})"));
+    let behind: Vec<String> = queue
+        .blocked_by
+        .iter()
+        .map(|b| format!("{}/{}#{}", b.owner, b.project_name, b.number))
+        .collect();
+    let behind = (!behind.is_empty()).then(|| format!(" behind {}", behind.join(", ")));
+
+    Some(format!(
+        "queued for eval{}{}",
+        position.unwrap_or_default(),
+        behind.unwrap_or_default()
+    ))
+}
+
+/// Attribute progress, or where the build is when it has no attributes (yet).
+pub fn progress_text(build: &Build, progress: Option<Progress>) -> String {
+    match (&build.status, progress) {
+        (Status::Evaluating, _) => "evaluating".to_owned(),
+        (Status::Pending, _) if build.eval_queue.is_some() => {
+            let position = build.eval_queue.as_ref().and_then(|q| q.position);
+            position.map_or("queued".to_owned(), |p| format!("queued #{p}"))
+        }
+        (_, Some(progress)) if progress.total > 0 => progress.to_string(),
+        (status, _) => status.label().to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,6 +124,27 @@ mod tests {
         for (since, expected) in cases {
             assert_eq!(age(since.parse().unwrap(), now), expected, "{since}");
         }
+    }
+
+    #[test]
+    fn queued_builds_say_what_they_wait_for() {
+        let queue: Vec<crate::api::QueueEntry> =
+            serde_json::from_str(include_str!("../tests/fixtures/queue.json")).unwrap();
+        let build = &queue[2].build;
+        assert_eq!(
+            queue_note(build).as_deref(),
+            Some("queued for eval (pos 1) behind example/project#121")
+        );
+        assert_eq!(progress_text(build, None), "queued #1");
+        assert_eq!(queue_note(&queue[0].build), None);
+    }
+
+    #[test]
+    fn builds_without_attributes_show_their_status() {
+        let detail: crate::api::BuildDetail =
+            serde_json::from_str(include_str!("../tests/fixtures/build_eval_failed.json")).unwrap();
+        let progress = Some(Progress::of(&detail.attributes));
+        assert_eq!(progress_text(&detail.build, progress), "failed");
     }
 
     #[test]

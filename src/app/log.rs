@@ -68,8 +68,15 @@ impl LogView {
         (self.feed_tx, self.feed_rx) = mpsc::unbounded_channel();
     }
 
-    pub async fn next_feed(&mut self) -> Option<Feed> {
-        self.feed_rx.recv().await
+    pub async fn next_feed(&mut self) -> Feed {
+        self.feed_rx
+            .recv()
+            .await
+            .expect("the view holds a sender, so its channel stays open")
+    }
+
+    pub fn try_feed(&mut self) -> Option<Feed> {
+        self.feed_rx.try_recv().ok()
     }
 
     pub fn apply(&mut self, feed: Feed) {
@@ -148,7 +155,7 @@ impl LogView {
 }
 
 /// Carriage returns redraw a line in a terminal; keep what would be left on screen.
-pub fn sanitize(line: &str) -> String {
+fn sanitize(line: &str) -> String {
     let line = line
         .rsplit('\r')
         .find(|s| !s.is_empty())

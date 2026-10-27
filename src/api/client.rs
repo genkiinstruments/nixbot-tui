@@ -66,10 +66,6 @@ impl Client {
         self.base.as_str().trim_end_matches('/')
     }
 
-    pub fn has_token(&self) -> bool {
-        self.token.is_some()
-    }
-
     fn url(&self, segments: &[&str]) -> Url {
         let mut url = self.base.clone();
         url.path_segments_mut()

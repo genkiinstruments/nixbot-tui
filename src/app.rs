@@ -18,10 +18,8 @@ use crate::{
     format::Progress,
 };
 
-pub use self::{
-    log::{Feed, LogView, Scroll, sanitize},
-    refresh::Refresh,
-};
+pub use self::log::{Feed, LogView, Scroll};
+use self::refresh::Refresh;
 
 /// Lines of history fetched when a log opens.
 pub const LOG_TAIL: u32 = 2000;
@@ -157,6 +155,7 @@ pub enum Msg {
         number: u64,
         info: Option<PrInfo>,
     },
+    Failed(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -225,15 +224,17 @@ impl App {
     }
 
     pub fn update(&mut self, msg: Msg) -> Vec<Cmd> {
+        use Msg::*;
+
         match msg {
-            Msg::Key(key) => self.on_key(key),
-            Msg::Tick(now) => self.on_tick(now),
-            Msg::Rows(rows) => self.on_rows(rows),
-            Msg::Detail(key, detail) => {
+            Key(key) => self.on_key(key),
+            Tick(now) => self.on_tick(now),
+            Rows(rows) => self.on_rows(rows),
+            Detail(key, detail) => {
                 self.on_detail(&key, detail);
                 vec![]
             }
-            Msg::Log(feed) => {
+            Log(feed) => {
                 let Self { log, detail, .. } = self;
                 let is_end = matches!(feed, Feed::End(_));
 
@@ -247,7 +248,7 @@ impl App {
 
                 vec![]
             }
-            Msg::StatusChanged { build_id } => {
+            StatusChanged { build_id } => {
                 let Self {
                     detail,
                     rows_refresh,
@@ -263,7 +264,7 @@ impl App {
 
                 vec![]
             }
-            Msg::ActionDone { action, result } => {
+            ActionDone { action, result } => {
                 match result {
                     Ok(()) => self.flash(format!("requested: {action}"), FlashKind::Info),
                     Err(err) => self.flash(format!("{action} failed: {err}"), FlashKind::Error),
@@ -282,8 +283,12 @@ impl App {
 
                 vec![]
             }
-            Msg::Pr { repo, number, info } => {
+            Pr { repo, number, info } => {
                 self.prs.insert((repo, number), info);
+                vec![]
+            }
+            Failed(err) => {
+                self.flash(err, FlashKind::Error);
                 vec![]
             }
         }
@@ -364,12 +369,7 @@ impl App {
             }
         };
 
-        rows.sort_by(|a, b| {
-            let is_active = |r: &Row| r.build.status.is_active();
-            is_active(b)
-                .cmp(&is_active(a))
-                .then(b.build.created_at.cmp(&a.build.created_at))
-        });
+        sort_rows(&mut rows);
         *shown = rows;
         *rows_error = None;
 
@@ -473,11 +473,13 @@ impl App {
     }
 
     fn on_modal_key(&mut self, modal: Modal, key: KeyEvent) -> Vec<Cmd> {
+        use KeyCode::*;
+
         match (modal, key.code) {
-            (Modal::Confirm { key, action }, KeyCode::Char('y' | 'Y')) => {
+            (Modal::Confirm { key, action }, Char('y' | 'Y')) => {
                 vec![Cmd::Control { key, action }]
             }
-            (Modal::Confirm { .. }, KeyCode::Char('n' | 'N' | 'q') | KeyCode::Esc) => vec![],
+            (Modal::Confirm { .. }, Char('n' | 'N' | 'q') | Esc) => vec![],
             (modal @ Modal::Confirm { .. }, _) => {
                 self.modal = Some(modal);
                 vec![]
@@ -517,36 +519,38 @@ impl App {
     }
 
     fn on_list_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
+        use KeyCode::*;
+
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-            KeyCode::Char('j') | KeyCode::Down => self.select_row(|i| i.saturating_add(1)),
-            KeyCode::Char('k') | KeyCode::Up => self.select_row(|i| i.saturating_sub(1)),
-            KeyCode::Char('g') | KeyCode::Home => self.select_row(|_| 0),
-            KeyCode::Char('G') | KeyCode::End => self.select_row(|_| usize::MAX),
-            KeyCode::Char('a') => {
+            Char('q') | Esc => self.should_quit = true,
+            Char('j') | Down => self.select_row(|i| i.saturating_add(1)),
+            Char('k') | Up => self.select_row(|i| i.saturating_sub(1)),
+            Char('g') | Home => self.select_row(|_| 0),
+            Char('G') | End => self.select_row(|_| usize::MAX),
+            Char('a') => {
                 self.scope = match self.scope {
                     Scope::Active => Scope::Recent,
                     Scope::Recent => Scope::Active,
                 };
                 return self.load_rows();
             }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+            Enter | Char('l') | Right => {
                 if let Some(row) = self.selected_row().cloned() {
                     return self.open_detail(row);
                 }
             }
-            KeyCode::Char(c @ ('r' | 'c')) => {
+            Char(c @ ('r' | 'c')) => {
                 if let Some(Row { key, build, .. }) = self.selected_row().cloned() {
                     let is_active = build.status.is_active();
                     self.confirm(key, Action::new(verb(c), Target::Build), is_active);
                 }
             }
-            KeyCode::Char('o') => {
+            Char('o') => {
                 if let Some(row) = self.selected_row() {
                     return vec![Cmd::Open(self.open_url(row))];
                 }
             }
-            KeyCode::Char('b') => {
+            Char('b') => {
                 if let Some(row) = self.selected_row() {
                     return vec![Cmd::Open(row.build_url.clone())];
                 }
@@ -577,6 +581,8 @@ impl App {
     }
 
     fn on_detail_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
+        use KeyCode::*;
+
         let Some(view) = &mut self.detail else {
             return vec![];
         };
@@ -587,39 +593,39 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Esc if !view.filter.is_empty() => {
+            Esc if !view.filter.is_empty() => {
                 view.filter.clear();
                 view.reset_attr_selection();
             }
-            KeyCode::Char('q' | 'h') | KeyCode::Esc | KeyCode::Left => self.detail = None,
-            KeyCode::Tab | KeyCode::BackTab => {
+            Char('q' | 'h') | Esc | Left => self.detail = None,
+            Tab | BackTab => {
                 view.pane = match view.pane {
                     Pane::Attrs if !view.effects().is_empty() => Pane::Effects,
                     _ => Pane::Attrs,
                 };
             }
-            KeyCode::Char('j') | KeyCode::Down => view.select(|i| i.saturating_add(1)),
-            KeyCode::Char('k') | KeyCode::Up => view.select(|i| i.saturating_sub(1)),
-            KeyCode::Char('g') | KeyCode::Home => view.select(|_| 0),
-            KeyCode::Char('G') | KeyCode::End => view.select(|_| usize::MAX),
-            KeyCode::Char('/') => {
+            Char('j') | Down => view.select(|i| i.saturating_add(1)),
+            Char('k') | Up => view.select(|i| i.saturating_sub(1)),
+            Char('g') | Home => view.select(|_| 0),
+            Char('G') | End => view.select(|_| usize::MAX),
+            Char('/') => {
                 view.pane = Pane::Attrs;
                 view.is_editing_filter = true;
             }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => return self.open_log(false),
-            KeyCode::Char('f') => return self.open_log(true),
-            KeyCode::Char(c @ ('r' | 'c')) => {
+            Enter | Char('l') | Right => return self.open_log(false),
+            Char('f') => return self.open_log(true),
+            Char(c @ ('r' | 'c')) => {
                 if let Some((target, is_active)) = view.selected_target() {
                     let key = view.row.key.clone();
                     self.confirm(key, Action::new(verb(c), target), is_active);
                 }
             }
-            KeyCode::Char(c @ ('R' | 'C')) => {
+            Char(c @ ('R' | 'C')) => {
                 let Row { key, build, .. } = &view.row;
                 let (key, is_active) = (key.clone(), build.status.is_active());
                 self.confirm(key, Action::new(verb(c), Target::Build), is_active);
             }
-            KeyCode::Char(c @ ('E' | 'X')) => {
+            Char(c @ ('E' | 'X')) => {
                 let is_active = view.effects().iter().any(|e| e.status.is_active());
                 let verb = if c == 'E' {
                     Verb::Restart
@@ -629,11 +635,11 @@ impl App {
                 let key = view.row.key.clone();
                 self.confirm(key, Action::new(verb, Target::Effects), is_active);
             }
-            KeyCode::Char('o') => {
+            Char('o') => {
                 let row = view.row.clone();
                 return vec![Cmd::Open(self.open_url(&row))];
             }
-            KeyCode::Char('b') => return vec![Cmd::Open(view.row.build_url.clone())],
+            Char('b') => return vec![Cmd::Open(view.row.build_url.clone())],
             _ => {}
         }
 
@@ -715,6 +721,8 @@ impl App {
     }
 
     fn on_log_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
+        use KeyCode::*;
+
         let height = usize::from(self.log_height);
         let page = height.saturating_sub(1).max(1).cast_signed();
         let Some(log) = &mut self.log else {
@@ -724,22 +732,22 @@ impl App {
         let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
         match key.code {
-            KeyCode::Char('q' | 'h') | KeyCode::Esc | KeyCode::Left => self.log = None,
-            KeyCode::Char('d') if is_ctrl => log.scroll_by(page / 2, height),
-            KeyCode::Char('u') if is_ctrl => log.scroll_by(-page / 2, height),
-            KeyCode::Char('j') | KeyCode::Down => log.scroll_by(1, height),
-            KeyCode::Char('k') | KeyCode::Up => log.scroll_by(-1, height),
-            KeyCode::PageDown | KeyCode::Char(' ') => log.scroll_by(page, height),
-            KeyCode::PageUp => log.scroll_by(-page, height),
-            KeyCode::Char('g') | KeyCode::Home => log.scroll = Scroll::At(0),
-            KeyCode::Char('G') | KeyCode::End => log.scroll = Scroll::End,
-            KeyCode::Char('f') if log.is_following => {
+            Char('q' | 'h') | Esc | Left => self.log = None,
+            Char('d') if is_ctrl => log.scroll_by(page / 2, height),
+            Char('u') if is_ctrl => log.scroll_by(-page / 2, height),
+            Char('j') | Down => log.scroll_by(1, height),
+            Char('k') | Up => log.scroll_by(-1, height),
+            PageDown | Char(' ') => log.scroll_by(page, height),
+            PageUp => log.scroll_by(-page, height),
+            Char('g') | Home => log.scroll = Scroll::At(0),
+            Char('G') | End => log.scroll = Scroll::End,
+            Char('f') if log.is_following => {
                 log.reconnect();
                 log.is_following = false;
             }
-            KeyCode::Char('f') => return self.start_follow(),
-            KeyCode::Char('o') => return vec![Cmd::Open(log.web_url.clone())],
-            KeyCode::Char(c @ ('r' | 'c')) => {
+            Char('f') => return self.start_follow(),
+            Char('o') => return vec![Cmd::Open(log.web_url.clone())],
+            Char(c @ ('r' | 'c')) => {
                 let LogView { key, source, .. } = log;
                 let key = key.clone();
                 let target = self.detail.as_ref().and_then(|view| view.target_of(source));
@@ -753,6 +761,15 @@ impl App {
 
         vec![]
     }
+}
+
+/// Active builds first, newest first within each group.
+pub fn sort_rows(rows: &mut [Row]) {
+    rows.sort_by(|a, b| {
+        let is_active = |r: &Row| r.build.status.is_active();
+        let by_activity = is_active(b).cmp(&is_active(a));
+        by_activity.then(b.build.created_at.cmp(&a.build.created_at))
+    });
 }
 
 /// `r`/`R` restart, `c`/`C` cancel.
@@ -800,17 +817,28 @@ impl DetailView {
     fn show(&mut self, mut detail: BuildDetail) {
         let selected_attr = self.selected_attr().map(|a| a.attr.clone());
         let selected_effect = self.selected_effect().map(|e| e.id);
+        let BuildDetail {
+            build,
+            attributes,
+            effects,
+        } = &mut detail;
 
-        detail.attributes.sort_by(|a, b| {
+        attributes.sort_by(|a, b| {
             let outcome = a.status.outcome().cmp(&b.status.outcome());
             outcome.then_with(|| a.attr.cmp(&b.attr))
         });
-        detail.effects.sort_by_key(|e| e.status.outcome());
+        effects.sort_by_key(|e| e.status.outcome());
 
-        self.row.progress = Some(Progress::of(&detail.attributes));
-        self.row.build = detail.build.clone();
-        self.detail = Some(detail);
-        self.error = None;
+        let Self {
+            row,
+            detail: shown,
+            error,
+            ..
+        } = self;
+        row.build = build.clone();
+        row.progress = Some(Progress::of(attributes));
+        *shown = Some(detail);
+        *error = None;
 
         let (attr_index, attrs_len) = {
             let visible = self.visible_attrs();
@@ -822,11 +850,14 @@ impl DetailView {
             let index = selected_effect.and_then(|id| effects.iter().position(|e| e.id == id));
             (index, effects.len())
         };
-        select_clamped(&mut self.attrs, attr_index, attrs_len);
-        select_clamped(&mut self.effects, effect_index, effects_len);
+        let Self { attrs, effects, .. } = self;
+        select_clamped(attrs, attr_index, attrs_len);
+        select_clamped(effects, effect_index, effects_len);
     }
 
     fn edit_filter(&mut self, code: KeyCode) {
+        use KeyCode::*;
+
         let Self {
             filter,
             is_editing_filter,
@@ -834,15 +865,15 @@ impl DetailView {
         } = self;
 
         match code {
-            KeyCode::Enter => *is_editing_filter = false,
-            KeyCode::Esc => {
+            Enter => *is_editing_filter = false,
+            Esc => {
                 *is_editing_filter = false;
                 filter.clear();
             }
-            KeyCode::Backspace => {
+            Backspace => {
                 filter.pop();
             }
-            KeyCode::Char(c) => filter.push(c),
+            Char(c) => filter.push(c),
             _ => return,
         }
 
@@ -863,9 +894,15 @@ impl DetailView {
             Pane::Attrs => self.visible_attrs().len(),
             Pane::Effects => self.effects().len(),
         };
-        let state = match self.pane {
-            Pane::Attrs => &mut self.attrs,
-            Pane::Effects => &mut self.effects,
+        let Self {
+            pane,
+            attrs,
+            effects,
+            ..
+        } = self;
+        let state = match pane {
+            Pane::Attrs => attrs,
+            Pane::Effects => effects,
         };
         let index = to(state.selected().unwrap_or(0));
         select_clamped(state, Some(index), len);
