@@ -1,0 +1,251 @@
+{
+  "build": {
+    "id": 3020,
+    "project_id": 83,
+    "number": 120,
+    "tree_hash": "a43b355b42d8564ba4d8738f4fb617ada43b355b",
+    "commit_sha": "ec99e5e01e66567aa63358e1de9d1eafec99e5e0",
+    "branch": "feat/widget",
+    "pr_number": 42,
+    "pr_author": "github:alice",
+    "status": "building",
+    "eval_warnings": null,
+    "error": null,
+    "created_at": "2026-01-15T11:38:45.177210Z",
+    "started_at": "2026-01-15T11:38:45.799998Z",
+    "finished_at": null,
+    "eval_duration_ms": 20897,
+    "eval_queue": null
+  },
+  "attributes": [
+    {
+      "id": 1293663,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.tests",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/hhdy8v2r3gq3ja55d8alqg6qay2y1z79-tests.drv",
+      "outputs": {
+        "out": "/nix/store/ic81ql7zlwn273bklig9ph6rx1cy1klb-tests"
+      },
+      "status": "building",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:38:54.280118Z",
+      "finished_at": null,
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293669,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.clippy",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/dxh9i2kajdsjsjplhidi1d2n65b9c14i-clippy.drv",
+      "outputs": {
+        "out": "/nix/store/vaww5rhaygrxp0q9m0idk02av4z8gp3k-clippy"
+      },
+      "status": "building",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:49:48.607137Z",
+      "finished_at": null,
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293672,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.fmt",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/zfvmzx384jvn6x0784xx6shjjrih1rg9-fmt.drv",
+      "outputs": {
+        "out": "/nix/store/6kq3lsk3kzimqs0sa7v1j151cl6gxwik-fmt"
+      },
+      "status": "building",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:38:57.410522Z",
+      "finished_at": null,
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293665,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.docs",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/xw6r9p0hsi18380j2dfaxnwlcfw2rwlw-docs.drv",
+      "outputs": {
+        "out": "/nix/store/62lp81adh8c1j2vsczy42hri4kq0yg2b-docs"
+      },
+      "status": "pending",
+      "cached": false,
+      "error": null,
+      "started_at": null,
+      "finished_at": null,
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293666,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.integration",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/8wd3hnp2z1a140wihkbzay6jw6p31bzk-integration.drv",
+      "outputs": {
+        "out": "/nix/store/bjvyvzmifay009s0xh5bc8n2r4agilyk-integration"
+      },
+      "status": "pending",
+      "cached": false,
+      "error": null,
+      "started_at": null,
+      "finished_at": null,
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293667,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.vm-boot",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/mx2ncwjz2h4bsav3klv2x80k9ydp09mm-vm-boot.drv",
+      "outputs": {
+        "out": "/nix/store/2ky9akp185ls1kxgxmhj2qminl8yjhai-vm-boot"
+      },
+      "status": "pending",
+      "cached": false,
+      "error": null,
+      "started_at": null,
+      "finished_at": null,
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293683,
+      "build_id": 3020,
+      "attr": "checks.aarch64-linux.cli",
+      "system": "aarch64-linux",
+      "drv_path": "/nix/store/awjs2dqayz0h6xgb0bnliy22cxcdzjqn-cli.drv",
+      "outputs": {
+        "out": "/nix/store/rv1vgjqip2rsyh1ipxn70m8dfmv2mabr-cli"
+      },
+      "status": "skipped_local",
+      "cached": true,
+      "error": null,
+      "started_at": null,
+      "finished_at": "2026-01-15T11:38:57.409697Z",
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293684,
+      "build_id": 3020,
+      "attr": "checks.aarch64-linux.server",
+      "system": "aarch64-linux",
+      "drv_path": "/nix/store/vjcw5jbricbqaqhf2axlqx9mv3wayyir-server.drv",
+      "outputs": {
+        "out": "/nix/store/ppsj8zdwyya37gbn3jgp5szgymsv8zsc-server"
+      },
+      "status": "skipped_local",
+      "cached": true,
+      "error": null,
+      "started_at": null,
+      "finished_at": "2026-01-15T11:38:57.411135Z",
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293685,
+      "build_id": 3020,
+      "attr": "checks.aarch64-linux.client",
+      "system": "aarch64-linux",
+      "drv_path": "/nix/store/pqm8a3iplgvxqghvrx1ycygf5y0zbz0z-client.drv",
+      "outputs": {
+        "out": "/nix/store/0wjb1zriv4m9jzm95rz33w9dshb168h7-client"
+      },
+      "status": "skipped_local",
+      "cached": true,
+      "error": null,
+      "started_at": null,
+      "finished_at": "2026-01-15T11:38:57.415248Z",
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293668,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.library",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/c8a08jkiv4kb28r1g2d8xjsd7dpipw3m-library.drv",
+      "outputs": {
+        "out": "/nix/store/0ypfs8qb0j349nz4hz9mdawibjwnxxb9-library"
+      },
+      "status": "succeeded",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:38:57.410546Z",
+      "finished_at": "2026-01-15T11:49:43.202838Z",
+      "log_size": 90599,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293674,
+      "build_id": 3020,
+      "attr": "checks.aarch64-darwin.plugin",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/xvl7fcjddxvbxz1khvdy43cfihyggy1a-plugin.drv",
+      "outputs": {
+        "out": "/nix/store/xrmyrndlmi8zfqpvm70xv1gj0ig0wsx7-plugin"
+      },
+      "status": "succeeded",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:38:57.410568Z",
+      "finished_at": "2026-01-15T11:38:59.338024Z",
+      "log_size": 625,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1293682,
+      "build_id": 3020,
+      "attr": "checks.aarch64-linux.plugin-host",
+      "system": "aarch64-linux",
+      "drv_path": "/nix/store/x2w2g15k5xh7hhy4gj2yiqakpiy9vkx3-plugin-host.drv",
+      "outputs": {
+        "out": "/nix/store/8xr7h1hnl4p2lfvzxdd958c50mvfl32v-plugin-host"
+      },
+      "status": "succeeded",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:38:57.410647Z",
+      "finished_at": "2026-01-15T11:41:38.072215Z",
+      "log_size": 29791,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    }
+  ],
+  "effects": []
+}

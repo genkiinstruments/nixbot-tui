@@ -1,0 +1,12 @@
+{
+  "id": 25034,
+  "kind": "push",
+  "name": "default.deploy",
+  "status": "running",
+  "error": null,
+  "started_at": "2026-01-15T11:48:50.472481Z",
+  "finished_at": null,
+  "build_number": 118,
+  "schedule_name": null,
+  "skip_reason": null
+}

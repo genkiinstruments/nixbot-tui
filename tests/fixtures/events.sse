@@ -1,0 +1,8 @@
+retry: 3000
+
+event: status
+data: {"build_id" : 3020, "project_id" : 83, "attr" : "checks.aarch64-darwin.tests", "status" : "building"}
+
+event: status
+data: {"build_id" : 3020, "project_id" : 83, "attr" : "checks.aarch64-darwin.clippy", "status" : "succeeded"}
+

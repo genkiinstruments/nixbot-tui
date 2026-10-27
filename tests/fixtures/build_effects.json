@@ -1,0 +1,181 @@
+{
+  "build": {
+    "id": 3019,
+    "project_id": 83,
+    "number": 118,
+    "tree_hash": "cff5a7d9fe74390d9fc48410712d6be0cff5a7d9",
+    "commit_sha": "242f55e2f525dc739f00e02fe0517100242f55e2",
+    "branch": "main",
+    "pr_number": 40,
+    "pr_author": "github:alice",
+    "status": "succeeded",
+    "eval_warnings": null,
+    "error": null,
+    "created_at": "2026-01-15T11:35:27.560658Z",
+    "started_at": "2026-01-15T11:35:28.813416Z",
+    "finished_at": "2026-01-15T11:43:36.127319Z",
+    "eval_duration_ms": 19428,
+    "eval_queue": null
+  },
+  "attributes": [
+    {
+      "id": 1292963,
+      "build_id": 3019,
+      "attr": "checks.aarch64-darwin.docs",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/xw6r9p0hsi18380j2dfaxnwlcfw2rwlw-docs.drv",
+      "outputs": {
+        "out": "/nix/store/62lp81adh8c1j2vsczy42hri4kq0yg2b-docs"
+      },
+      "status": "skipped_local",
+      "cached": true,
+      "error": null,
+      "started_at": null,
+      "finished_at": "2026-01-15T11:35:35.225688Z",
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1292964,
+      "build_id": 3019,
+      "attr": "checks.aarch64-darwin.integration",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/8wd3hnp2z1a140wihkbzay6jw6p31bzk-integration.drv",
+      "outputs": {
+        "out": "/nix/store/bjvyvzmifay009s0xh5bc8n2r4agilyk-integration"
+      },
+      "status": "skipped_local",
+      "cached": true,
+      "error": null,
+      "started_at": null,
+      "finished_at": "2026-01-15T11:35:35.227301Z",
+      "log_size": 0,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1292962,
+      "build_id": 3019,
+      "attr": "checks.aarch64-darwin.tests",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/hhdy8v2r3gq3ja55d8alqg6qay2y1z79-tests.drv",
+      "outputs": {
+        "out": "/nix/store/ic81ql7zlwn273bklig9ph6rx1cy1klb-tests"
+      },
+      "status": "succeeded",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:35:35.226978Z",
+      "finished_at": "2026-01-15T11:38:04.250359Z",
+      "log_size": 17783,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    },
+    {
+      "id": 1292979,
+      "build_id": 3019,
+      "attr": "checks.aarch64-darwin.package",
+      "system": "aarch64-darwin",
+      "drv_path": "/nix/store/i5g7zd82zhpkwcj2yrbn0i1x3iz74fn7-package.drv",
+      "outputs": {
+        "out": "/nix/store/p06n14wg70j05a9xbmw9j1s3fg8bpsiv-package"
+      },
+      "status": "succeeded",
+      "cached": false,
+      "error": null,
+      "started_at": "2026-01-15T11:35:35.227341Z",
+      "finished_at": "2026-01-15T11:43:17.071332Z",
+      "log_size": 212341,
+      "log_truncated": false,
+      "eval_wall_ms": null,
+      "eval_alloc_bytes": null
+    }
+  ],
+  "effects": [
+    {
+      "id": 25034,
+      "kind": "push",
+      "name": "default.deploy",
+      "status": "running",
+      "error": null,
+      "started_at": "2026-01-15T11:48:50.472481Z",
+      "finished_at": null
+    },
+    {
+      "id": 25035,
+      "kind": "push",
+      "name": "default.publish",
+      "status": "pending",
+      "error": null,
+      "started_at": "2026-01-15T11:44:11.365254Z",
+      "finished_at": null
+    },
+    {
+      "id": 25036,
+      "kind": "push",
+      "name": "default.notify",
+      "status": "pending",
+      "error": null,
+      "started_at": "2026-01-15T11:44:11.365254Z",
+      "finished_at": null
+    },
+    {
+      "id": 25038,
+      "kind": "build_finished",
+      "name": "report-linux",
+      "status": "pending",
+      "error": null,
+      "started_at": "2026-01-15T11:44:21.270846Z",
+      "finished_at": null
+    },
+    {
+      "id": 25039,
+      "kind": "build_finished",
+      "name": "report-darwin",
+      "status": "pending",
+      "error": null,
+      "started_at": "2026-01-15T11:44:21.278727Z",
+      "finished_at": null
+    },
+    {
+      "id": 25024,
+      "kind": "check",
+      "name": "pull_request.preview",
+      "status": "succeeded",
+      "error": null,
+      "started_at": "2026-01-15T11:44:11.644686Z",
+      "finished_at": "2026-01-15T11:44:33.413831Z"
+    },
+    {
+      "id": 25025,
+      "kind": "check",
+      "name": "build_finished.report",
+      "status": "succeeded",
+      "error": null,
+      "started_at": "2026-01-15T11:44:11.637154Z",
+      "finished_at": "2026-01-15T11:44:30.821444Z"
+    },
+    {
+      "id": 25026,
+      "kind": "check",
+      "name": "comment.bench",
+      "status": "succeeded",
+      "error": null,
+      "started_at": "2026-01-15T11:44:11.655161Z",
+      "finished_at": "2026-01-15T11:44:20.378195Z"
+    },
+    {
+      "id": 25037,
+      "kind": "push",
+      "name": "default.schema",
+      "status": "succeeded",
+      "error": null,
+      "started_at": "2026-01-15T11:44:21.844841Z",
+      "finished_at": "2026-01-15T11:44:33.315090Z"
+    }
+  ]
+}

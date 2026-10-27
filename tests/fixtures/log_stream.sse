@@ -1,0 +1,26 @@
+event: state
+data: [{"idx":0,"drv":null,"name":"setup","status":"built","ph":[],"t0":1768471791731,"t1":1768471791731,"n":2},{"idx":1,"drv":"/nix/store/16mvnrr2w7cyj2v3ylghf96ca20fqwjq-source.drv","name":"source","status":"running","ph":[["unpackPhase",0],["patchPhase",2],["updateAutotoolsGnuConfigScriptsPhase",4],["configurePhase",4],["buildPhase",6],["checkPhase",8]],"t0":1768471878402,"t1":1768471925270,"n":696}]
+
+event: line
+data: {"t":"line","idx":1,"from":48,"text":"\u001b[1m\u001b[33mwarning\u001b[0m: unused variable: `x`"}
+
+event: line
+data: {"t":"line","idx":1,"from":49,"text":"test parser::tests::splits_words ... ok"}
+
+event: line
+data: {"t":"line","idx":1,"from":50,"text":""}
+
+event: drv
+data: {"t":"drv","idx":3,"drv":"/nix/store/jms8a1bmg4z67a3dhigia3xr8pvlyivf-tests.drv","name":"tests"}
+
+event: phase
+data: {"t":"phase","idx":3,"phase":"checkPhase","line":0}
+
+: keepalive
+
+event: drv-done
+data: {"t":"status","idx":3,"status":"built"}
+
+event: done
+data: {}
+

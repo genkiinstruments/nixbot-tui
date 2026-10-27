@@ -1,0 +1,6 @@
+event: text
+data: {"text":"deploying to staging...\n{}deploy successful.\nuploading state file\n"}
+
+event: done
+data: {}
+
