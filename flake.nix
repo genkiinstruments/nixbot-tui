@@ -31,6 +31,8 @@
           cargoLock.lockFile = ./Cargo.lock;
           # The client tests talk to a wiremock server on loopback.
           __darwinAllowLocalNetworking = true;
+          # reqwest loads the system roots when a client is built, even for plain http.
+          nativeCheckInputs = [ pkgs.cacert ];
           meta.mainProgram = "nixbot-tui";
         };
       });
