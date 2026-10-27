@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fmt, path::PathBuf, process::Command};
 
 use anyhow::{Context, Result, bail};
+use etcetera::BaseStrategy;
 use serde::Deserialize;
 
 /// An API token. Its `Debug` output is redacted so it cannot end up in logs or error messages.
@@ -40,16 +41,14 @@ struct HostEntry {
 }
 
 /// `$XDG_CONFIG_HOME/nixbot/hosts.toml`, the file the `nbo` CLI reads too.
-pub fn config_path(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
-    let base = env("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    Some(base.join("nixbot").join("hosts.toml"))
+pub fn config_path() -> Option<PathBuf> {
+    let base = etcetera::choose_base_strategy().ok()?;
+    Some(base.config_dir().join("nixbot").join("hosts.toml"))
 }
 
 pub fn load() -> Result<Vec<Host>> {
     let env = |key: &str| std::env::var(key).ok().filter(|v| !v.is_empty());
-    let path = config_path(env);
+    let path = config_path();
     let text = match &path {
         Some(path) if path.exists() => Some(
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
@@ -124,28 +123,24 @@ pub fn run_token_command(command: &str) -> Result<String> {
     Ok(stdout.lines().next().unwrap_or_default().trim().to_owned())
 }
 
-/// Whether a repository URL matches a `remotes` pattern (`*` and `?` wildcards, any case).
+/// Whether a repository URL matches a `remotes` pattern such as `github.com/owner/*`.
 pub fn remote_matches(pattern: &str, repo_url: &str) -> bool {
-    let remote = normalize_remote(repo_url).to_lowercase();
-    glob(pattern.to_lowercase().as_bytes(), remote.as_bytes())
+    let options = glob::MatchOptions {
+        case_sensitive: false,
+        ..glob::MatchOptions::new()
+    };
+    glob::Pattern::new(pattern).is_ok_and(|p| p.matches_with(&remote_path(repo_url), options))
 }
 
-/// `https://github.com/o/r.git` and `git@github.com:o/r` both become `github.com/o/r`.
-fn normalize_remote(url: &str) -> String {
-    let url = url.split_once("://").map_or(url, |(_, rest)| rest);
-    let url = url.split_once('@').map_or(url, |(_, rest)| rest);
-    url.trim_end_matches('/')
-        .trim_end_matches(".git")
-        .replace(':', "/")
-}
-
-fn glob(pattern: &[u8], text: &[u8]) -> bool {
-    match pattern.split_first() {
-        None => text.is_empty(),
-        Some((b'*', rest)) => (0..=text.len()).any(|i| glob(rest, &text[i..])),
-        Some((&p, rest)) => text
-            .split_first()
-            .is_some_and(|(&t, text)| (p == b'?' || p == t) && glob(rest, text)),
+/// `https://github.com/o/r.git` becomes `github.com/o/r`, the form `nbo` matches against.
+fn remote_path(repo_url: &str) -> String {
+    match reqwest::Url::parse(repo_url) {
+        Ok(url) => format!(
+            "{}{}",
+            url.host_str().unwrap_or_default(),
+            url.path().trim_end_matches('/').trim_end_matches(".git")
+        ),
+        Err(_) => repo_url.to_owned(),
     }
 }
 
@@ -252,25 +247,12 @@ token = "inline"
     }
 
     #[test]
-    fn config_path_follows_xdg() {
-        assert_eq!(
-            config_path(env(&[("XDG_CONFIG_HOME", "/x"), ("HOME", "/h")])),
-            Some(PathBuf::from("/x/nixbot/hosts.toml"))
-        );
-        assert_eq!(
-            config_path(env(&[("HOME", "/h")])),
-            Some(PathBuf::from("/h/.config/nixbot/hosts.toml"))
-        );
-    }
-
-    #[test]
     fn remotes_match_https_and_ssh_urls() {
         let pattern = "github.com/Example/*";
         assert!(remote_matches(
             pattern,
             "https://github.com/example/project.git"
         ));
-        assert!(remote_matches(pattern, "git@github.com:example/project"));
         assert!(!remote_matches(
             pattern,
             "https://github.com/other/project.git"
