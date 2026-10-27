@@ -29,6 +29,8 @@
             ];
           };
           cargoLock.lockFile = ./Cargo.lock;
+          # The client tests talk to a wiremock server on loopback.
+          __darwinAllowLocalNetworking = true;
           meta.mainProgram = "nixbot-tui";
         };
       });
