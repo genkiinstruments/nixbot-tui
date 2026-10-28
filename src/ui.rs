@@ -20,6 +20,7 @@ const DETAIL_KEYS: &str = "⏎ log · f follow · Tab pane · / filter · r/c it
      E/X effects · o PR · ? help · q back";
 const LOG_KEYS: &str =
     "f follow · j/k scroll · g/G top/end · [/] previous/next · r/c restart/cancel · o web · q back";
+const CONFIRM_KEYS: &str = "⏎ confirm · Esc cancel";
 const FILTER_KEYS: &str = "type to filter attributes · ⏎ keep · Esc clear";
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -59,7 +60,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         LIST_KEYS
     };
 
-    if app.log.is_none() && app.detail.is_none() && app.is_editing_search {
+    if matches!(app.modal, Some(Modal::Confirm { .. })) {
+        frame.render_widget(Line::from(CONFIRM_KEYS).yellow(), footer);
+    } else if app.log.is_none() && app.detail.is_none() && app.is_editing_search {
         let line = Line::from(vec![Span::from("/").bold(), Span::from(app.search.value())]);
         frame.render_widget(line, footer);
         let cursor = u16::try_from(app.search.visual_cursor()).unwrap_or(u16::MAX);
@@ -73,7 +76,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             let text = Text::from(vec![
                 Line::from(format!("{action} of {} #{}?", key.repo, key.number)),
                 Line::default(),
-                Line::from("y confirm · n cancel").dark_gray(),
+                Line::from("Enter to confirm, Esc to cancel").dark_gray(),
             ]);
             popup(frame, " confirm ", text, 60);
         }
@@ -564,5 +567,6 @@ fn help() -> Text<'static> {
         section("everywhere"),
         key("q Esc", "back, or quit from the builds list"),
         key("? / ^c", "help / quit"),
+        key("⏎ / Esc", "confirm / cancel a restart or cancel"),
     ])
 }

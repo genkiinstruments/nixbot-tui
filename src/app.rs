@@ -611,11 +611,12 @@ impl App {
         use KeyCode::*;
 
         match (modal, key.code) {
-            (Modal::Confirm { key, action }, Char('y' | 'Y')) => {
+            (Modal::Confirm { key, action }, Enter) => {
                 self.flash(format!("sending: {action}…"), FlashKind::Info);
                 vec![Cmd::Control { key, action }]
             }
-            (Modal::Confirm { .. }, Char('n' | 'N' | 'q') | Esc) => vec![],
+            (Modal::Confirm { .. }, Esc) => vec![],
+            // A stray key must not send anything.
             (modal @ Modal::Confirm { .. }, _) => {
                 self.modal = Some(modal);
                 vec![]

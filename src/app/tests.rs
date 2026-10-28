@@ -171,7 +171,7 @@ fn toggling_the_active_filter_reloads_at_once() {
 }
 
 #[test]
-fn restart_asks_first_and_only_yes_sends() {
+fn restart_asks_first_and_only_enter_sends() {
     let (mut app, _) = loaded();
     let key = app.selected_row().unwrap().key.clone();
     let restart = Action::new(Verb::Restart, Target::Build);
@@ -184,15 +184,19 @@ fn restart_asks_first_and_only_yes_sends() {
         })
     );
 
-    assert_eq!(type_keys(&mut app, "x"), [], "other keys keep asking");
+    assert_eq!(
+        type_keys(&mut app, "ynq x"),
+        [],
+        "no other key sends or closes it"
+    );
     assert!(app.modal.is_some());
 
-    assert_eq!(type_keys(&mut app, "n"), []);
+    assert_eq!(press(&mut app, KeyCode::Esc), []);
     assert_eq!(app.modal, None);
 
     type_keys(&mut app, "r");
     assert_eq!(
-        type_keys(&mut app, "y"),
+        press(&mut app, KeyCode::Enter),
         [Cmd::Control {
             key,
             action: restart
@@ -707,7 +711,7 @@ fn restart_in_view(app: &mut App, key: &BuildKey) -> Action {
         panic!("{:?}", app.modal)
     };
     assert!(matches!(
-        type_keys(app, "y").as_slice(),
+        press(app, KeyCode::Enter).as_slice(),
         [Cmd::Control { .. }]
     ));
 

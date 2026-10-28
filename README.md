@@ -71,7 +71,8 @@ logged in.
 | anywhere | `q`, `Esc`       | back, or quit from the builds list                  |
 |          | `?`, `^c`        | help, quit                                          |
 
-Restarting or cancelling always asks for `y` first.
+Restarting or cancelling always asks first: Enter confirms, Esc cancels, and any other key
+leaves the question open.
 
 ## Development
 
