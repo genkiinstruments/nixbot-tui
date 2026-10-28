@@ -969,3 +969,86 @@ fn effects_of_a_build_that_did_not_succeed_cannot_restart() {
     let text = &app.flash.as_ref().unwrap().text;
     assert!(text.contains("successful build"), "{text}");
 }
+
+fn log_attr(app: &App) -> &str {
+    match &log(app).source {
+        LogSource::Attr(attr) => attr,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn brackets_step_through_the_attribute_logs_and_stop_at_the_ends() {
+    let (mut app, _) = loaded();
+    open_detail(&mut app);
+    type_keys(&mut app, "Gk");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(log_attr(&app), "checks.aarch64-linux.plugin-host");
+
+    let cmds = type_keys(&mut app, "]");
+    assert_eq!(log_attr(&app), "checks.aarch64-linux.server");
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::LoadLog { .. }]),
+        "a finished attribute is tailed: {cmds:?}"
+    );
+    let detail = app.detail.as_ref().unwrap();
+    assert_eq!(
+        detail.selected_attr().unwrap().attr,
+        "checks.aarch64-linux.server",
+        "the build's selection moves along, as with h j l"
+    );
+
+    assert_eq!(type_keys(&mut app, "]"), [], "the last one stays");
+    assert_eq!(log_attr(&app), "checks.aarch64-linux.server");
+
+    type_keys(&mut app, "[[");
+    assert_eq!(log_attr(&app), "checks.aarch64-linux.client");
+}
+
+#[test]
+fn brackets_keep_following_and_detach_the_old_stream() {
+    let (mut app, _) = loaded();
+    open_detail(&mut app);
+    type_keys(&mut app, "G");
+    let cmds = type_keys(&mut app, "f");
+    let old = feed_tx(&cmds[0]).clone();
+
+    let cmds = type_keys(&mut app, "[");
+    assert_eq!(log_attr(&app), "checks.aarch64-linux.plugin-host");
+    assert!(log(&app).is_following);
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::LoadLog { .. }, Cmd::Follow { .. }]),
+        "{cmds:?}"
+    );
+    assert!(old.0.is_closed());
+}
+
+#[test]
+fn brackets_follow_a_running_entry_like_opening_it_does() {
+    let (mut app, _) = loaded();
+    open_detail(&mut app);
+    type_keys(&mut app, "j");
+    press(&mut app, KeyCode::Enter);
+    let cmds = type_keys(&mut app, "[");
+    assert_eq!(log_attr(&app), "checks.aarch64-darwin.clippy");
+    assert!(log(&app).is_following, "it is still building: {cmds:?}");
+}
+
+#[test]
+fn brackets_stay_among_the_effects() {
+    let (mut app, _) = loaded();
+    open_settled_effects(&mut app);
+    press(&mut app, KeyCode::Enter);
+    let LogSource::Effect { name, .. } = &log(&app).source else {
+        panic!()
+    };
+    assert_eq!(name, "default.deploy");
+
+    type_keys(&mut app, "]");
+    let LogSource::Effect { name, .. } = &log(&app).source else {
+        panic!("{:?}", log(&app).source)
+    };
+    assert_eq!(name, "default.publish");
+    type_keys(&mut app, "[");
+    assert_eq!(type_keys(&mut app, "["), [], "the first one stays");
+}

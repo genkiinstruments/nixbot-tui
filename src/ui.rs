@@ -18,7 +18,8 @@ const LIST_KEYS: &str = "j/k move · ⏎ open · / search · p repo · a active 
      c cancel · o PR · b build page · ? help · q quit";
 const DETAIL_KEYS: &str = "⏎ log · f follow · Tab pane · / filter · r/c item · R/C build · \
      E/X effects · o PR · ? help · q back";
-const LOG_KEYS: &str = "f follow · j/k scroll · g/G top/end · r/c restart/cancel · o web · q back";
+const LOG_KEYS: &str =
+    "f follow · j/k scroll · g/G top/end · [/] previous/next · r/c restart/cancel · o web · q back";
 const FILTER_KEYS: &str = "type to filter attributes · ⏎ keep · Esc clear";
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -558,6 +559,7 @@ fn help() -> Text<'static> {
         key("f", "follow live output, or stop"),
         key("j/k ^d/^u", "scroll a line / half a page"),
         key("g / G", "top / end (end keeps following)"),
+        key("[ / ]", "the previous / next attribute or effect's log"),
         key("o", "open the log in the browser"),
         section("everywhere"),
         key("q Esc", "back, or quit from the builds list"),

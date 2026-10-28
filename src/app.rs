@@ -991,6 +991,50 @@ impl App {
         }]
     }
 
+    /// Opens the log of the entry before or after this one in its pane, as going back, moving
+    /// with j/k and opening it would; it stays put at either end.
+    fn step_log(&mut self, delta: isize) -> Vec<Cmd> {
+        let Self { detail, log, .. } = self;
+        let (
+            Some(view),
+            Some(LogView {
+                source,
+                is_following,
+                ..
+            }),
+        ) = (detail, log)
+        else {
+            return vec![];
+        };
+
+        match source {
+            LogSource::Attr(attr) => view.select_attr(attr),
+            LogSource::Effect { kind, name, .. } => view.select_effect_named(kind, name),
+        }
+
+        let state = match view.pane {
+            Pane::Attrs => &view.attrs,
+            Pane::Effects => &view.effects,
+        };
+        let before = state.selected();
+        view.select(|i| i.saturating_add_signed(delta));
+
+        let after = match view.pane {
+            Pane::Attrs => view.attrs.selected(),
+            Pane::Effects => view.effects.selected(),
+        };
+
+        if after == before {
+            return vec![];
+        }
+
+        let was_following = *is_following;
+        let is_active = view
+            .selected_target()
+            .is_some_and(|(_, is_active)| is_active);
+        self.open_log(was_following || is_active)
+    }
+
     fn on_log_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
         use KeyCode::*;
 
@@ -1018,6 +1062,8 @@ impl App {
             }
             Char('f') => return self.start_follow(),
             Char('o') => return vec![Cmd::Open(log.web_url.clone())],
+            Char('[') => return self.step_log(-1),
+            Char(']') => return self.step_log(1),
             Char(c @ ('r' | 'c')) => {
                 let LogView { key, source, .. } = log;
                 let key = key.clone();
@@ -1166,6 +1212,18 @@ impl DetailView {
         let (index, len) = (visible.iter().position(|a| a.attr == name), visible.len());
         self.pane = Pane::Attrs;
         select_clamped(&mut self.attrs, index, len);
+    }
+
+    fn select_effect_named(&mut self, kind: &str, name: &str) {
+        let id = self
+            .effects()
+            .iter()
+            .find(|e| e.kind == kind && e.name == name)
+            .map(|e| e.id);
+
+        if let Some(id) = id {
+            self.select_effect(id);
+        }
     }
 
     fn select_effect(&mut self, id: u64) {

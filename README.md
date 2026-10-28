@@ -66,6 +66,7 @@ logged in.
 | log      | `f`              | follow live output, or stop                         |
 |          | `j`/`k`, `^d`/`^u`, `PgUp`/`PgDn` | scroll                             |
 |          | `g` / `G`        | top / end (the end keeps up with new output)        |
+|          | `[` / `]`        | the previous / next attribute's or effect's log     |
 |          | `o`              | open the log in the browser                         |
 | anywhere | `q`, `Esc`       | back, or quit from the builds list                  |
 |          | `?`, `^c`        | help, quit                                          |
