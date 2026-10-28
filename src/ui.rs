@@ -423,7 +423,7 @@ fn draw_log(frame: &mut Frame, area: Rect, log: &LogView) {
     let shown = &lines[top..lines.len().min(top + height)];
     let name = match source {
         LogSource::Attr(attr) => attr.as_str(),
-        LogSource::Effect { label, .. } => label.as_str(),
+        LogSource::Effect { name, .. } => name.as_str(),
     };
     let mut title = vec![Span::from(format!(" {name} · {} #{} ", key.repo, key.number)).bold()];
 

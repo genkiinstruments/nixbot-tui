@@ -27,7 +27,8 @@ const EVENTS_RECONNECT: Duration = Duration::from_secs(3);
 /// An effect's stream ends just before its status is written.
 const EFFECT_STATUS_POLLS: u32 = 40;
 const EFFECT_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const EFFECT_RECONNECT: Duration = Duration::from_secs(2);
+/// Wait before streaming a log again whose stream ended while it was still due to run.
+const STREAM_RECONNECT: Duration = Duration::from_secs(2);
 
 /// Runs commands in the background and reports back with messages.
 #[derive(Debug, Clone)]
@@ -112,6 +113,7 @@ impl Tasks {
                     .control(&key.repo, key.number, &action)
                     .await;
                 Msg::ActionDone {
+                    key,
                     action,
                     result: result.map_err(|e| e.to_string()),
                 }
@@ -320,31 +322,70 @@ fn no_log(run: &EffectRun) -> String {
 }
 
 /// Streams an attribute's live output; the result is the note to end with, `None` if the view
-/// went away first.
+/// went away first. A pending attribute, restarted or not yet scheduled, has nothing to stream
+/// yet, so it is streamed again until it has run.
 async fn follow_attr(
     client: &Client,
     key: &BuildKey,
     attr: &str,
     feed_tx: &mpsc::UnboundedSender<Feed>,
 ) -> Option<Option<String>> {
-    let mut events = match client.log_stream(&key.repo, key.number, attr).await {
-        Ok(events) => events,
-        Err(err) => return Some(Some(err.to_string())),
-    };
-
     let mut names: HashMap<u32, String> = HashMap::new();
 
     loop {
+        match stream_attr(client, key, attr, feed_tx, &mut names).await {
+            Streamed::Closed => return None,
+            Streamed::Failed(err) => return Some(Some(err)),
+            Streamed::Ended { .. } => {}
+        }
+
+        let status = match client.build(&key.repo, key.number).await {
+            Ok(detail) => detail
+                .attributes
+                .into_iter()
+                .find(|a| a.attr == attr)
+                .map(|a| a.status),
+            Err(err) => return Some(Some(err.to_string())),
+        };
+
+        match status {
+            Some(status) if status.is_active() => {
+                tokio::select! {
+                    () = feed_tx.closed() => return None,
+                    () = tokio::time::sleep(STREAM_RECONNECT) => {}
+                }
+            }
+            status => return Some(status.map(|s| format!("finished: {}", s.label()))),
+        }
+    }
+}
+
+/// One connection to an attribute's stream; `names` carries derivation names across them.
+async fn stream_attr(
+    client: &Client,
+    key: &BuildKey,
+    attr: &str,
+    feed_tx: &mpsc::UnboundedSender<Feed>,
+    names: &mut HashMap<u32, String>,
+) -> Streamed {
+    let mut events = match client.log_stream(&key.repo, key.number, attr).await {
+        Ok(events) => events,
+        Err(err) => return Streamed::Failed(err.to_string()),
+    };
+
+    let mut has_output = false;
+
+    loop {
         let event = tokio::select! {
-            () = feed_tx.closed() => return None,
+            () = feed_tx.closed() => return Streamed::Closed,
             event = events.next() => event,
         };
 
         let line = match event {
-            None | Some(Ok(LogEvent::Done)) => break,
-            Some(Err(err)) => return Some(Some(err.to_string())),
+            None | Some(Ok(LogEvent::Done)) => return Streamed::Ended { has_output },
+            Some(Err(err)) => return Streamed::Failed(err.to_string()),
             Some(Ok(LogEvent::State(derivations))) => {
-                names = derivations.into_iter().map(|d| (d.idx, d.name)).collect();
+                *names = derivations.into_iter().map(|d| (d.idx, d.name)).collect();
                 continue;
             }
             Some(Ok(LogEvent::Drv { idx, name })) => {
@@ -365,17 +406,12 @@ async fn follow_attr(
             Some(Ok(LogEvent::Line { text })) => text,
         };
 
+        has_output = true;
+
         if feed_tx.send(Feed::Lines(vec![line])).is_err() {
-            return None;
+            return Streamed::Closed;
         }
     }
-
-    let detail = client.build(&key.repo, key.number).await;
-    let status = detail.ok().and_then(|detail| {
-        let found = detail.attributes.into_iter().find(|a| a.attr == attr);
-        found.map(|a| a.status)
-    });
-    Some(status.map(|s| format!("finished: {}", s.label())))
 }
 
 /// How one connection to an effect run's stream ended.
@@ -418,7 +454,7 @@ async fn follow_effect(
             Ok(run) if run.status.is_active() => {
                 tokio::select! {
                     () = feed_tx.closed() => return None,
-                    () = tokio::time::sleep(EFFECT_RECONNECT) => {}
+                    () = tokio::time::sleep(STREAM_RECONNECT) => {}
                 }
             }
             Ok(run) if has_shown_output => {

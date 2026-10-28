@@ -38,7 +38,8 @@ fn key() -> BuildKey {
 fn source() -> LogSource {
     LogSource::Effect {
         id: 7,
-        label: "default.deploy".into(),
+        kind: "push".into(),
+        name: "default.deploy".into(),
     }
 }
 
@@ -117,6 +118,82 @@ async fn following_a_run_that_has_not_started_waits_for_its_output() {
             "signed project.app",
             "packaging done",
         ]
+    );
+    assert_eq!(view.note.as_deref(), Some("finished: built"));
+}
+
+const BUILD: &str = "/api/repos/github/example/project/builds/120";
+const ATTR: &str = "checks.aarch64-darwin.docs";
+
+fn detail_with(status: &str) -> ResponseTemplate {
+    let mut detail: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/build_running.json")).unwrap();
+    let attrs = detail["attributes"].as_array_mut().unwrap();
+    let attr = attrs.iter_mut().find(|a| a["attr"] == ATTR).unwrap();
+    attr["status"] = status.into();
+    ResponseTemplate::new(200).set_body_json(detail)
+}
+
+#[tokio::test]
+async fn following_a_restarted_attribute_waits_for_it_to_run() {
+    let server = MockServer::start().await;
+    let stream = format!("{BUILD}/logs/{ATTR}/stream");
+    // Restarted and still pending: there is nothing to stream yet.
+    Mock::given(method("GET"))
+        .and(path(stream.as_str()))
+        .respond_with(sse("event: done\ndata: {}\n\n"))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(BUILD))
+        .respond_with(detail_with("pending"))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(stream.as_str()))
+        .respond_with(sse(include_str!("fixtures/log_stream.sse")))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(BUILD))
+        .respond_with(detail_with("succeeded"))
+        .mount(&server)
+        .await;
+
+    let client = Client::new(&server.uri(), None).unwrap();
+    let (msg_tx, _msg_rx) = tokio::sync::mpsc::unbounded_channel();
+    let key = BuildKey {
+        number: 120,
+        ..key()
+    };
+    let source = LogSource::Attr(ATTR.into());
+    let mut view = LogView::new(key.clone(), source.clone(), String::new());
+    Tasks::new(vec![client], msg_tx).spawn(Cmd::Follow {
+        key,
+        source,
+        feed_tx: FeedTx(view.feed_tx()),
+    });
+
+    loop {
+        let feed = tokio::time::timeout(Duration::from_secs(20), view.next_feed())
+            .await
+            .expect("the follow task ends with Feed::End");
+        let is_end = matches!(feed, Feed::End(_));
+        view.apply(feed);
+
+        if is_end {
+            break;
+        }
+    }
+
+    assert!(
+        view.lines.iter().any(|l| l.contains("splits_words")),
+        "{:?}",
+        view.lines
     );
     assert_eq!(view.note.as_deref(), Some("finished: built"));
 }

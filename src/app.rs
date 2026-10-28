@@ -100,7 +100,12 @@ pub enum Jump {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogSource {
     Attr(String),
-    Effect { id: u64, label: String },
+    /// A restart may give the effect a new run, found again by kind and name.
+    Effect {
+        id: u64,
+        kind: String,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +168,7 @@ pub enum Msg {
         build_id: Option<i64>,
     },
     ActionDone {
+        key: BuildKey,
         action: Action,
         result: Result<(), String>,
     },
@@ -246,10 +252,7 @@ impl App {
             Key(key) => self.on_key(key),
             Tick(now) => self.on_tick(now),
             Rows(rows) => self.on_rows(rows),
-            Detail(key, detail) => {
-                self.on_detail(&key, detail);
-                vec![]
-            }
+            Detail(key, detail) => self.on_detail(&key, detail),
             Log(feed) => {
                 let Self { log, detail, .. } = self;
                 let is_end = matches!(feed, Feed::End(_));
@@ -280,7 +283,17 @@ impl App {
 
                 vec![]
             }
-            ActionDone { action, result } => {
+            ActionDone {
+                key,
+                action,
+                result,
+            } => {
+                let is_restart = action.verb == Verb::Restart && result.is_ok();
+                let restarts_log = self
+                    .log
+                    .as_ref()
+                    .is_some_and(|log| log.key == key && restarts(&action.target, &log.source));
+
                 match result {
                     Ok(()) => self.flash(format!("requested: {action}"), FlashKind::Info),
                     Err(err) => self.flash(format!("{action} failed: {err}"), FlashKind::Error),
@@ -295,6 +308,10 @@ impl App {
 
                 if let Some(view) = detail {
                     view.refresh.request();
+                }
+
+                if is_restart && restarts_log {
+                    return self.follow_restarted();
                 }
 
                 vec![]
@@ -424,20 +441,49 @@ impl App {
         cmds
     }
 
-    fn on_detail(&mut self, key: &BuildKey, detail: Result<Box<BuildDetail>, String>) {
-        let Some(view) = &mut self.detail else {
-            return;
+    fn on_detail(&mut self, key: &BuildKey, detail: Result<Box<BuildDetail>, String>) -> Vec<Cmd> {
+        let Self {
+            detail: view, log, ..
+        } = self;
+        let Some(view) = view else {
+            return vec![];
         };
 
         if &view.row.key != key {
-            return;
+            return vec![];
         }
 
         view.refresh.finish();
 
         match detail {
             Ok(detail) => view.show(*detail),
-            Err(err) => view.error = Some(err),
+            Err(err) => {
+                view.error = Some(err);
+                return vec![];
+            }
+        }
+
+        // A restarted push effect runs under a new id; follow that run.
+        let Some(LogView {
+            key: log_key,
+            source: LogSource::Effect { id, kind, name },
+            ..
+        }) = log
+        else {
+            return vec![];
+        };
+
+        let rerun = view
+            .effects()
+            .iter()
+            .find(|e| &e.kind == kind && &e.name == name && e.id != *id);
+
+        match rerun {
+            Some(effect) if log_key == key => {
+                *id = effect.id;
+                self.follow_restarted()
+            }
+            _ => vec![],
         }
     }
 
@@ -493,6 +539,7 @@ impl App {
 
         match (modal, key.code) {
             (Modal::Confirm { key, action }, Char('y' | 'Y')) => {
+                self.flash(format!("sending: {action}…"), FlashKind::Info);
                 vec![Cmd::Control { key, action }]
             }
             (Modal::Confirm { .. }, Char('n' | 'N' | 'q') | Esc) => vec![],
@@ -720,7 +767,8 @@ impl App {
 
                 let source = LogSource::Effect {
                     id: effect.id,
-                    label: effect.name.clone(),
+                    kind: effect.kind.clone(),
+                    name: effect.name.clone(),
                 };
                 (source, build_url.clone())
             }
@@ -747,6 +795,17 @@ impl App {
         }
 
         cmds
+    }
+
+    /// The run in the log view started over: drop what it showed and follow it anew.
+    fn follow_restarted(&mut self) -> Vec<Cmd> {
+        let Some(log) = &mut self.log else {
+            return vec![];
+        };
+
+        log.reconnect();
+        log.clear();
+        self.start_follow()
     }
 
     fn start_follow(&mut self) -> Vec<Cmd> {
@@ -816,6 +875,21 @@ impl App {
 /// Newest first, as `nbo build list` shows them.
 pub fn sort_rows(rows: &mut [Row]) {
     rows.sort_by_key(|row| std::cmp::Reverse(row.build.created_at));
+}
+
+/// Whether restarting `target` starts the log of `source` over.
+fn restarts(target: &Target, source: &LogSource) -> bool {
+    match (target, source) {
+        (Target::Build, _) | (Target::Effects, LogSource::Effect { .. }) => true,
+        (Target::Attr(restarted), LogSource::Attr(shown)) => restarted == shown,
+        (
+            Target::Effect { name, kind },
+            LogSource::Effect {
+                name: n, kind: k, ..
+            },
+        ) => name == n && kind == k,
+        _ => false,
+    }
 }
 
 /// `r`/`R` restart, `c`/`C` cancel.

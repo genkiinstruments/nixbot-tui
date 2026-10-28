@@ -184,6 +184,11 @@ fn restart_asks_first_and_only_yes_sends() {
         }]
     );
     assert_eq!(app.modal, None);
+    assert_eq!(
+        app.flash.as_ref().map(|f| f.text.as_str()),
+        Some("sending: restart the build…"),
+        "something shows before the server answers"
+    );
 }
 
 #[test]
@@ -216,6 +221,7 @@ fn cancelling_a_finished_build_is_refused_without_asking() {
 fn action_results_are_flashed_then_expire_and_trigger_a_refresh() {
     let (mut app, start) = loaded();
     app.update(Msg::ActionDone {
+        key: app.rows[0].key.clone(),
         action: Action::new(Verb::Cancel, Target::Build),
         result: Err("HTTP 403 Forbidden: not allowed".into()),
     });
@@ -515,7 +521,8 @@ fn following_an_effect_replays_its_stream_and_buffers_partial_lines() {
     let cmds = type_keys(&mut app, "f");
     let source = LogSource::Effect {
         id: 25034,
-        label: "default.deploy".into(),
+        kind: "push".into(),
+        name: "default.deploy".into(),
     };
     assert_eq!(
         cmds,
@@ -677,4 +684,113 @@ fn opening_a_build_from_the_command_line_lands_on_the_log() {
     assert!(app.log.is_none());
     press(&mut app, KeyCode::Esc);
     assert!(app.detail.is_none(), "Esc goes on to the builds list");
+}
+
+fn restart_in_view(app: &mut App, key: &BuildKey) -> Action {
+    type_keys(app, "r");
+    let Some(Modal::Confirm { action, .. }) = app.modal.clone() else {
+        panic!("{:?}", app.modal)
+    };
+    assert!(matches!(
+        type_keys(app, "y").as_slice(),
+        [Cmd::Control { .. }]
+    ));
+
+    let cmds = app.update(Msg::ActionDone {
+        key: key.clone(),
+        action: action.clone(),
+        result: Ok(()),
+    });
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::Follow { .. }]),
+        "the restarted run is followed: {cmds:?}"
+    );
+    action
+}
+
+#[test]
+fn restarting_the_effect_in_view_follows_it_from_the_start() {
+    let (mut app, _) = loaded();
+    let key = open_effects(&mut app);
+    type_keys(&mut app, "Gk");
+    press(&mut app, KeyCode::Enter);
+    app.update(Msg::Log(Feed::History(Ok("the failed run\n".into()))));
+
+    restart_in_view(&mut app, &key);
+    let view = log(&app);
+    assert!(view.is_following);
+    assert!(
+        view.lines.is_empty(),
+        "the old run's log goes: {:?}",
+        view.lines
+    );
+}
+
+#[test]
+fn a_restarted_push_effect_is_followed_on_its_new_run() {
+    let (mut app, _) = loaded();
+    let key = open_effects(&mut app);
+    type_keys(&mut app, "G");
+    press(&mut app, KeyCode::Enter);
+    restart_in_view(&mut app, &key);
+
+    let mut detail = effects_detail();
+    let schema = detail
+        .effects
+        .iter_mut()
+        .find(|e| e.name == "default.schema")
+        .unwrap();
+    schema.id = 30001;
+    schema.status = Status::Pending;
+    let cmds = app.update(Msg::Detail(key, Ok(Box::new(detail))));
+
+    let Some(Cmd::Follow {
+        source: LogSource::Effect { id, .. },
+        ..
+    }) = cmds.first()
+    else {
+        panic!("the new run is followed: {cmds:?}")
+    };
+    assert_eq!(*id, 30001);
+    assert!(matches!(
+        log(&app).source,
+        LogSource::Effect { id: 30001, .. }
+    ));
+}
+
+#[test]
+fn restarting_the_attribute_in_view_follows_it_again() {
+    let (mut app, _) = loaded();
+    let key = open_detail(&mut app);
+    type_keys(&mut app, "G");
+    press(&mut app, KeyCode::Enter);
+    app.update(Msg::Log(Feed::History(Ok("old\n".into()))));
+
+    restart_in_view(&mut app, &key);
+    assert!(log(&app).lines.is_empty());
+}
+
+#[test]
+fn other_restarts_leave_the_log_alone() {
+    let (mut app, _) = loaded();
+    let key = open_effects(&mut app);
+    type_keys(&mut app, "G");
+    press(&mut app, KeyCode::Enter);
+    let other = Action::new(
+        Verb::Restart,
+        Target::Effect {
+            name: "comment.bench".into(),
+            kind: "check".into(),
+        },
+    );
+    let failed = Action::new(Verb::Restart, Target::Effects);
+
+    for (action, result) in [(other, Ok(())), (failed, Err("HTTP 403".into()))] {
+        let msg = Msg::ActionDone {
+            key: key.clone(),
+            action,
+            result,
+        };
+        assert_eq!(app.update(msg), []);
+    }
 }
