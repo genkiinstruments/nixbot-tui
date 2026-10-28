@@ -15,7 +15,7 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     actions::{Action, Target, Verb},
-    api::{Attribute, Build, BuildDetail, Effect, RepoRef},
+    api::{Attribute, Build, BuildDetail, Effect, RepoRef, Status},
     format::{EffectSummary, Progress},
     search::Search,
 };
@@ -655,7 +655,38 @@ impl App {
             return;
         }
 
+        if let Some(reason) = self.ignored_restart(&key, &action) {
+            self.flash(format!("cannot {action}: {reason}"), FlashKind::Error);
+            return;
+        }
+
         self.modal = Some(Modal::Confirm { key, action });
+    }
+
+    /// Why the server would ignore restarting push effects: they only run after a successful
+    /// build, one rerun at a time. Event effects restart on their own.
+    fn ignored_restart(&self, key: &BuildKey, action: &Action) -> Option<&'static str> {
+        let is_push_restart = action.verb == Verb::Restart
+            && match &action.target {
+                Target::Effects => true,
+                Target::Effect { kind, .. } => kind == "push",
+                Target::Build | Target::Attr(_) => false,
+            };
+        let view = self.detail.as_ref().filter(|view| &view.row.key == key)?;
+
+        if !is_push_restart {
+            return None;
+        }
+
+        if view.row.build.status != Status::Succeeded {
+            return Some("effects only run after a successful build");
+        }
+
+        let is_rerunning = view
+            .effects()
+            .iter()
+            .any(|e| e.kind == "push" && e.status.is_active());
+        is_rerunning.then_some("its push effects are still running; restart them once they end")
     }
 
     /// The pull request if the build has one, otherwise the build's page.

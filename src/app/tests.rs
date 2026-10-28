@@ -927,3 +927,45 @@ fn the_repo_picker_narrows_the_list_to_one_repo() {
     assert_eq!(app.modal, None);
     assert_eq!(app.repo, None, "Esc keeps the filter as it was");
 }
+
+#[test]
+fn restarting_push_effects_that_the_server_would_ignore_says_why() {
+    let (mut app, _) = loaded();
+    open_effects(&mut app);
+    type_keys(&mut app, "E");
+    assert_eq!(app.modal, None);
+    let flash = app.flash.clone().unwrap();
+    assert_eq!(flash.kind, FlashKind::Error);
+    assert!(flash.text.contains("still running"), "{}", flash.text);
+
+    type_keys(&mut app, "r");
+    assert_eq!(app.modal, None, "default.deploy is a push effect");
+
+    type_keys(&mut app, "jjj");
+    let selected = app.detail.as_ref().unwrap().selected_effect().unwrap();
+    assert_eq!(selected.kind, "build_finished");
+    type_keys(&mut app, "r");
+    assert!(
+        matches!(app.modal, Some(Modal::Confirm { .. })),
+        "event effects restart on their own"
+    );
+}
+
+#[test]
+fn effects_of_a_build_that_did_not_succeed_cannot_restart() {
+    let (mut app, _) = loaded();
+    let key = app.rows[0].key.clone();
+    press(&mut app, KeyCode::Enter);
+    let mut detail = effects_detail();
+    detail.build.status = Status::Failed;
+
+    for effect in &mut detail.effects {
+        effect.status = Status::Succeeded;
+    }
+
+    app.update(Msg::Detail(key, Ok(Box::new(detail))));
+    type_keys(&mut app, "E");
+    assert_eq!(app.modal, None);
+    let text = &app.flash.as_ref().unwrap().text;
+    assert!(text.contains("successful build"), "{text}");
+}
