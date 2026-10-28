@@ -21,12 +21,12 @@ struct Cli {
     /// Open this build; its repository is -R or the current checkout's origin.
     #[arg(conflicts_with = "dump")]
     build: Option<u64>,
-    /// The build's repository.
+    /// The build's repository; without a build, the list starts with only this repository.
     #[arg(
         short = 'R',
         long,
         value_name = "[FORGE/]OWNER/NAME",
-        requires = "build"
+        conflicts_with = "dump"
     )]
     repo: Option<String>,
     /// Open this attribute's log: its name or an unambiguous part of it.
@@ -85,8 +85,12 @@ async fn main() -> Result<()> {
         }
         None => None,
     };
+    let repo = match (&startup, repo) {
+        (None, Some(spec)) => Some(jump::resolve_repo(&clients, &spec).await?.1.repo),
+        _ => None,
+    };
 
-    runtime::run(clients, startup).await
+    runtime::run(clients, repo, startup).await
 }
 
 async fn dump_rows(clients: Vec<Client>, scope: Scope) -> Result<()> {

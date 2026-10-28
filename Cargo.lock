@@ -1493,6 +1493,7 @@ dependencies = [
  "eventsource-stream",
  "futures-util",
  "jiff",
+ "nucleo-matcher",
  "open",
  "ratatui",
  "reqwest",
@@ -1501,6 +1502,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "toml",
+ "tui-input",
  "url",
  "wiremock",
 ]
@@ -1522,6 +1524,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "nucleo-matcher"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
+dependencies = [
+ "memchr",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -2881,6 +2893,17 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tui-input"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4fa0cb7933d19f91eb3109781bf7297d5e4cba57e857d97a29b9465d3383f56"
+dependencies = [
+ "ratatui",
+ "unicode-segmentation",
+ "unicode-width",
+]
 
 [[package]]
 name = "typenum"

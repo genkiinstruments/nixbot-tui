@@ -8,14 +8,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
 use tokio::sync::mpsc;
+use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     actions::{Action, Target, Verb},
     api::{Attribute, Build, BuildDetail, Effect, RepoRef},
     format::{EffectSummary, Progress},
+    search::Search,
 };
 
 pub use self::log::{Feed, LogView, Scroll};
@@ -42,6 +44,8 @@ pub struct Row {
     pub build: Build,
     pub progress: Option<Progress>,
     pub effects: Option<EffectSummary>,
+    /// Attribute and effect names, which the search matches too.
+    pub names: Vec<String>,
     pub build_url: String,
     /// The pull request on the forge, derived from the repository URL.
     pub pr_url: Option<String>,
@@ -62,6 +66,7 @@ impl Row {
             build,
             progress: None,
             effects: None,
+            names: Vec::new(),
             build_url,
             pr_url,
         }
@@ -121,7 +126,7 @@ pub struct DetailView {
     pub pane: Pane,
     pub attrs: TableState,
     pub effects: TableState,
-    pub filter: String,
+    pub filter: Input,
     pub is_editing_filter: bool,
     pub error: Option<String>,
     refresh: Refresh,
@@ -129,7 +134,15 @@ pub struct DetailView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modal {
-    Confirm { key: BuildKey, action: Action },
+    Confirm {
+        key: BuildKey,
+        action: Action,
+    },
+    /// Picks the repository the list shows; `selected` 0 is all of them.
+    Repos {
+        repos: Vec<RepoRef>,
+        selected: usize,
+    },
     Help,
 }
 
@@ -208,8 +221,13 @@ pub enum Cmd {
 #[derive(Debug)]
 pub struct App {
     pub rows: Vec<Row>,
+    /// Selection among [`App::visible_rows`].
     pub table: TableState,
     pub scope: Scope,
+    /// Only this repository's builds, when set.
+    pub repo: Option<RepoRef>,
+    pub search: Input,
+    pub is_editing_search: bool,
     pub rows_error: Option<String>,
     pub is_loaded: bool,
     pub detail: Option<DetailView>,
@@ -231,6 +249,9 @@ impl App {
             rows: Vec::new(),
             table: TableState::default(),
             scope: Scope::default(),
+            repo: None,
+            search: Input::default(),
+            is_editing_search: false,
             rows_error: None,
             is_loaded: false,
             detail: None,
@@ -406,11 +427,6 @@ impl App {
         *shown = rows;
         *rows_error = None;
 
-        let index = selected
-            .and_then(|key| shown.iter().position(|r| r.key == key))
-            .or(table.selected());
-        select_clamped(table, index, shown.len());
-
         if let Some(view) = detail
             && let Some(row) = shown.iter().find(|r| r.key == view.row.key)
         {
@@ -437,6 +453,14 @@ impl App {
                 });
             }
         }
+
+        let previous_index = table.selected();
+        let visible = self.visible_rows();
+        let index = selected
+            .and_then(|key| visible.iter().position(|r| r.key == key))
+            .or(previous_index);
+        let len = visible.len();
+        select_clamped(&mut self.table, index, len);
 
         cmds
     }
@@ -499,13 +523,61 @@ impl App {
     where
         F: FnOnce(usize) -> usize,
     {
-        let Self { rows, table, .. } = self;
-        let index = to(table.selected().unwrap_or(0));
-        select_clamped(table, Some(index), rows.len());
+        let len = self.visible_rows().len();
+        let index = to(self.table.selected().unwrap_or(0));
+        select_clamped(&mut self.table, Some(index), len);
     }
 
     pub fn selected_row(&self) -> Option<&Row> {
-        self.table.selected().and_then(|i| self.rows.get(i))
+        let index = self.table.selected()?;
+        self.visible_rows().get(index).copied()
+    }
+
+    /// The rows the repository filter and the search let through, in list order.
+    pub fn visible_rows(&self) -> Vec<&Row> {
+        let Self {
+            rows,
+            repo,
+            search,
+            prs,
+            ..
+        } = self;
+        let mut search = Search::new(search.value());
+
+        rows.iter()
+            .filter(|row| repo.as_ref().is_none_or(|repo| &row.key.repo == repo))
+            .filter(|row| {
+                let Row {
+                    key, build, names, ..
+                } = row;
+                let number = format!("#{}", build.number);
+                let repo = key.repo.to_string();
+                let pr = build.pr_number.map(|n| format!("#{n}"));
+                let title = build.pr_number.and_then(|n| {
+                    let info = prs.get(&(key.repo.clone(), n))?.as_ref()?;
+                    Some(info.title.as_str())
+                });
+                let mut fields = vec![
+                    number.as_str(),
+                    repo.as_str(),
+                    build.branch.as_str(),
+                    build.status.label(),
+                    crate::format::short_sha(&build.commit_sha),
+                ];
+                fields.extend(pr.as_deref());
+                fields.extend(title);
+                fields.extend(names.iter().map(String::as_str));
+                search.is_match(&fields)
+            })
+            .collect()
+    }
+
+    /// The repositories in the list, for the picker.
+    fn repos(&self) -> Vec<RepoRef> {
+        let mut repos: Vec<RepoRef> = self.rows.iter().map(|r| r.key.repo.clone()).collect();
+        repos.sort();
+        repos.dedup();
+        repos
     }
 
     fn on_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
@@ -518,7 +590,8 @@ impl App {
             return self.on_modal_key(modal, key);
         }
 
-        let is_typing = self.detail.as_ref().is_some_and(|d| d.is_editing_filter);
+        let is_typing =
+            self.is_editing_search || self.detail.as_ref().is_some_and(|d| d.is_editing_filter);
 
         if key.code == KeyCode::Char('?') && !is_typing {
             self.modal = Some(Modal::Help);
@@ -545,6 +618,27 @@ impl App {
             (Modal::Confirm { .. }, Char('n' | 'N' | 'q') | Esc) => vec![],
             (modal @ Modal::Confirm { .. }, _) => {
                 self.modal = Some(modal);
+                vec![]
+            }
+            (Modal::Repos { repos, selected }, code) => {
+                match code {
+                    Char('j') | Down => {
+                        let selected = (selected + 1).min(repos.len());
+                        self.modal = Some(Modal::Repos { repos, selected });
+                    }
+                    Char('k') | Up => {
+                        let selected = selected.saturating_sub(1);
+                        self.modal = Some(Modal::Repos { repos, selected });
+                    }
+                    Enter => {
+                        self.repo = selected.checked_sub(1).and_then(|i| repos.get(i)).cloned();
+                        self.table.select(Some(0));
+                        self.select_row(|i| i);
+                    }
+                    Esc | Char('q') => {}
+                    _ => self.modal = Some(Modal::Repos { repos, selected }),
+                }
+
                 vec![]
             }
             (Modal::Help, _) => vec![],
@@ -584,8 +678,27 @@ impl App {
     fn on_list_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
         use KeyCode::*;
 
+        if self.is_editing_search {
+            self.edit_search(key);
+            return vec![];
+        }
+
         match key.code {
+            Esc if !self.search.value().is_empty() => {
+                self.search.reset();
+                self.select_row(|i| i);
+            }
             Char('q') | Esc => self.should_quit = true,
+            Char('/') => self.is_editing_search = true,
+            Char('p') => {
+                let repos = self.repos();
+                let selected = self
+                    .repo
+                    .as_ref()
+                    .and_then(|repo| repos.iter().position(|r| r == repo))
+                    .map_or(0, |i| i + 1);
+                self.modal = Some(Modal::Repos { repos, selected });
+            }
             Char('j') | Down => self.select_row(|i| i.saturating_add(1)),
             Char('k') | Up => self.select_row(|i| i.saturating_sub(1)),
             Char('g') | Home => self.select_row(|_| 0),
@@ -652,6 +765,24 @@ impl App {
         self.open_log(should_follow || is_active)
     }
 
+    fn edit_search(&mut self, key: KeyEvent) {
+        use KeyCode::*;
+
+        match key.code {
+            Enter => self.is_editing_search = false,
+            Esc => {
+                self.is_editing_search = false;
+                self.search.reset();
+            }
+            _ => {
+                self.search.handle_event(&Event::Key(key));
+            }
+        }
+
+        self.table.select(Some(0));
+        self.select_row(|i| i);
+    }
+
     fn open_detail(&mut self, row: Row) -> Vec<Cmd> {
         let key = row.key.clone();
         let mut refresh = Refresh::default();
@@ -662,7 +793,7 @@ impl App {
             pane: Pane::Attrs,
             attrs: TableState::default(),
             effects: TableState::default(),
-            filter: String::new(),
+            filter: Input::default(),
             is_editing_filter: false,
             error: None,
             refresh,
@@ -679,13 +810,13 @@ impl App {
         };
 
         if view.is_editing_filter {
-            view.edit_filter(key.code);
+            view.edit_filter(key);
             return vec![];
         }
 
         match key.code {
-            Esc if !view.filter.is_empty() => {
-                view.filter.clear();
+            Esc if !view.filter.value().is_empty() => {
+                view.filter.reset();
                 view.reset_attr_selection();
             }
             Char('q' | 'h') | Esc | Left => self.detail = None,
@@ -917,7 +1048,7 @@ impl DetailView {
     }
 
     pub fn visible_attrs(&self) -> Vec<&Attribute> {
-        let filter = self.filter.to_lowercase();
+        let filter = self.filter.value().to_lowercase();
         self.attributes()
             .iter()
             .filter(|a| a.attr.to_lowercase().contains(&filter))
@@ -976,7 +1107,7 @@ impl DetailView {
         select_clamped(effects, effect_index, effects_len);
     }
 
-    fn edit_filter(&mut self, code: KeyCode) {
+    fn edit_filter(&mut self, key: KeyEvent) {
         use KeyCode::*;
 
         let Self {
@@ -985,17 +1116,15 @@ impl DetailView {
             ..
         } = self;
 
-        match code {
+        match key.code {
             Enter => *is_editing_filter = false,
             Esc => {
                 *is_editing_filter = false;
-                filter.clear();
+                filter.reset();
             }
-            Backspace => {
-                filter.pop();
+            _ => {
+                filter.handle_event(&Event::Key(key));
             }
-            Char(c) => filter.push(c),
-            _ => return,
         }
 
         self.reset_attr_selection();

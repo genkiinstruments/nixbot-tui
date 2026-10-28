@@ -40,10 +40,12 @@ pub struct Tasks {
     finished: Arc<Mutex<HashMap<BuildKey, Finished>>>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Counts {
     progress: Progress,
     effects: EffectSummary,
+    /// Attribute and effect names, for the search.
+    names: Vec<String>,
 }
 
 /// The counts of a build that had nothing left to run when it had this status.
@@ -213,22 +215,30 @@ impl Tasks {
             .expect("the summary cache is never poisoned: nothing panics holding it")
             .get(key)
             .filter(|finished| finished.status == build.status)
-            .map(|finished| finished.counts);
+            .map(|finished| finished.counts.clone());
 
         let counts = match cached {
             Some(counts) => counts,
             None => {
                 let detail = client.build(&key.repo, key.number).await?;
+                let attrs = detail.attributes.iter().map(|a| a.attr.clone());
+                let effects = detail.effects.iter().map(|e| e.name.clone());
                 Counts {
                     progress: Progress::of(&detail.attributes),
                     effects: EffectSummary::of(&detail.effects),
+                    names: attrs.chain(effects).collect(),
                 }
             }
         };
 
-        let Counts { progress, effects } = counts;
+        let Counts {
+            progress,
+            effects,
+            names,
+        } = counts.clone();
         row.progress = Some(progress);
         row.effects = Some(effects);
+        row.names = names;
 
         if !row.is_active() {
             let Row { key, build, .. } = &row;

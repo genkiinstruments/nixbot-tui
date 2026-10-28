@@ -24,6 +24,8 @@ nixbot-tui 412 -R example/project --attr x86_64-linux.tests
 
 Opening the log of anything still running follows it live.
 
+`-R` without a build number starts the list on that repository; `p` switches repositories later.
+
 ## Configuration
 
 nixbot-tui reads the same file as the `nbo` CLI, `$XDG_CONFIG_HOME/nixbot/hosts.toml` (by default
@@ -49,6 +51,8 @@ logged in.
 | Where    | Key              | Action                                              |
 | -------- | ---------------- | --------------------------------------------------- |
 | builds   | `j`/`k`, `↑`/`↓` | move (`g`/`G` first/last)                           |
+|          | `/`              | search: PR title or number, branch, build number, status, attribute or effect name (fzf syntax: `'exact`, `!not`) |
+|          | `p`              | show one repository, or all                         |
 |          | `⏎`              | open the build                                      |
 |          | `a`              | only builds still building or running effects, or all |
 |          | `r` / `c`        | restart / cancel the build                          |

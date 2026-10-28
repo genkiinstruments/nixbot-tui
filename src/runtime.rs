@@ -9,7 +9,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 
 use crate::{
-    api::Client,
+    api::{Client, RepoRef},
     app::{App, Feed, LogView, Msg},
     jump::Startup,
     tasks::Tasks,
@@ -18,9 +18,14 @@ use crate::{
 
 const TICK: Duration = Duration::from_secs(1);
 
-pub async fn run(clients: Vec<Client>, startup: Option<Startup>) -> Result<()> {
+/// Runs the TUI; `repo` narrows the list from the start, `startup` opens a build.
+pub async fn run(
+    clients: Vec<Client>,
+    repo: Option<RepoRef>,
+    startup: Option<Startup>,
+) -> Result<()> {
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, clients, startup).await;
+    let result = event_loop(&mut terminal, clients, repo, startup).await;
     ratatui::restore();
     result
 }
@@ -28,6 +33,7 @@ pub async fn run(clients: Vec<Client>, startup: Option<Startup>) -> Result<()> {
 async fn event_loop(
     terminal: &mut DefaultTerminal,
     clients: Vec<Client>,
+    repo: Option<RepoRef>,
     startup: Option<Startup>,
 ) -> Result<()> {
     let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
@@ -35,6 +41,7 @@ async fn event_loop(
     tasks.watch_events();
 
     let mut app = App::new(Instant::now());
+    app.repo = repo;
 
     if let Some(Startup {
         row,

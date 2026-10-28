@@ -75,6 +75,21 @@ fn open_effects(app: &mut App) -> BuildKey {
     key
 }
 
+/// The effects pane of a build whose effects have all finished.
+fn open_settled_effects(app: &mut App) -> BuildKey {
+    let key = app.rows[0].key.clone();
+    let mut detail = effects_detail();
+
+    for effect in &mut detail.effects {
+        effect.status = Status::Succeeded;
+    }
+
+    press(app, KeyCode::Enter);
+    app.update(Msg::Detail(key.clone(), Ok(Box::new(detail))));
+    press(app, KeyCode::Tab);
+    key
+}
+
 fn feed_tx(cmd: &Cmd) -> &FeedTx {
     match cmd {
         Cmd::LoadLog { feed_tx, .. } | Cmd::Follow { feed_tx, .. } => feed_tx,
@@ -413,12 +428,12 @@ fn effect_actions_target_one_effect_or_all() {
     );
 
     press(&mut app, KeyCode::Esc);
-    type_keys(&mut app, "E");
+    type_keys(&mut app, "X");
     assert_eq!(
         app.modal,
         Some(Modal::Confirm {
             key,
-            action: Action::new(Verb::Restart, Target::Effects)
+            action: Action::new(Verb::Cancel, Target::Effects)
         })
     );
 }
@@ -729,7 +744,7 @@ fn restarting_the_effect_in_view_follows_it_from_the_start() {
 #[test]
 fn a_restarted_push_effect_is_followed_on_its_new_run() {
     let (mut app, _) = loaded();
-    let key = open_effects(&mut app);
+    let key = open_settled_effects(&mut app);
     type_keys(&mut app, "G");
     press(&mut app, KeyCode::Enter);
     restart_in_view(&mut app, &key);
@@ -793,4 +808,122 @@ fn other_restarts_leave_the_log_alone() {
         };
         assert_eq!(app.update(msg), []);
     }
+}
+
+fn visible_numbers(app: &App) -> Vec<u64> {
+    app.visible_rows().iter().map(|r| r.key.number).collect()
+}
+
+#[test]
+fn search_narrows_the_list_live_and_esc_clears_it() {
+    let (mut app, _) = loaded();
+    type_keys(&mut app, "/widg");
+    assert!(app.is_editing_search);
+    assert_eq!(visible_numbers(&app), [120]);
+    assert_eq!(app.selected_row().unwrap().key.number, 120);
+
+    press(&mut app, KeyCode::Enter);
+    assert!(!app.is_editing_search);
+    assert_eq!(visible_numbers(&app), [120], "Enter keeps the search");
+    assert_eq!(
+        type_keys(&mut app, "r").len(),
+        0,
+        "keys act on the list again"
+    );
+    let Some(Modal::Confirm { key, .. }) = &app.modal else {
+        panic!("{:?}", app.modal)
+    };
+    assert_eq!(key.number, 120, "actions take the visible row");
+    press(&mut app, KeyCode::Esc);
+
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(visible_numbers(&app), [122, 121, 120]);
+    assert!(!app.should_quit, "the first Esc clears the search");
+    press(&mut app, KeyCode::Esc);
+    assert!(app.should_quit);
+}
+
+#[test]
+fn esc_while_typing_drops_the_search() {
+    let (mut app, _) = loaded();
+    type_keys(&mut app, "/main");
+    assert_eq!(visible_numbers(&app), [122, 121]);
+    press(&mut app, KeyCode::Esc);
+    assert!(!app.is_editing_search);
+    assert_eq!(visible_numbers(&app), [122, 121, 120]);
+}
+
+#[test]
+fn search_matches_pull_requests_status_and_build_numbers() {
+    let (mut app, _) = loaded();
+    app.update(Msg::Pr {
+        repo: app.rows[0].key.repo.clone(),
+        number: 41,
+        info: Some(PrInfo {
+            title: "Add a gadget".into(),
+            url: String::new(),
+        }),
+    });
+
+    for (query, expected) in [
+        ("gadget", vec![122]),
+        ("#42", vec![120]),
+        ("pending", vec![122]),
+        ("'121", vec![121]),
+        ("main !pending", vec![121]),
+    ] {
+        type_keys(&mut app, &format!("/{query}"));
+        assert_eq!(visible_numbers(&app), expected, "{query:?}");
+        press(&mut app, KeyCode::Esc);
+    }
+}
+
+#[test]
+fn search_matches_attribute_and_effect_names() {
+    let (mut app, _) = loaded();
+    let mut rows = queue_rows();
+    rows[1].names = vec!["checks.x86_64-linux.clippy".into(), "default.deploy".into()];
+    app.update(Msg::Rows(Ok(rows)));
+
+    type_keys(&mut app, "/clippy");
+    assert_eq!(visible_numbers(&app), [121]);
+    press(&mut app, KeyCode::Esc);
+    type_keys(&mut app, "/deploy");
+    assert_eq!(visible_numbers(&app), [121]);
+}
+
+#[test]
+fn the_repo_picker_narrows_the_list_to_one_repo() {
+    let (mut app, _) = loaded();
+    let mut rows = queue_rows();
+    rows[0].key.repo.name = "website".into();
+    let website = rows[0].key.repo.clone();
+    app.update(Msg::Rows(Ok(rows)));
+
+    type_keys(&mut app, "p");
+    let Some(Modal::Repos { repos, .. }) = &app.modal else {
+        panic!("{:?}", app.modal)
+    };
+    let names: Vec<String> = repos.iter().map(ToString::to_string).collect();
+    assert_eq!(names, ["example/project", "example/website"]);
+
+    type_keys(&mut app, "jj");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.repo, Some(website));
+    assert_eq!(visible_numbers(&app), [120]);
+
+    type_keys(&mut app, "p");
+    assert!(
+        matches!(app.modal, Some(Modal::Repos { selected: 2, .. })),
+        "the picker opens on the repo shown"
+    );
+    type_keys(&mut app, "kk");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.repo, None, "the first entry is all repos");
+    assert_eq!(visible_numbers(&app), [122, 121, 120]);
+
+    type_keys(&mut app, "p");
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(app.modal, None);
+    assert_eq!(app.repo, None, "Esc keeps the filter as it was");
 }

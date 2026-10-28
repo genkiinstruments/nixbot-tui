@@ -15,6 +15,7 @@ etcetera = "0.11.0"
 eventsource-stream = "0.2.3"
 futures-util = "0.3.34"
 jiff = { version = "0.2.38", features = ["serde"] }
+nucleo-matcher = "0.3.1"
 open = "5.4.5"
 ratatui = "0.30.2"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "json", "http2"] }
@@ -23,6 +24,7 @@ serde_json = "1.0.154"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "process", "sync", "time"] }
 toml = "1.1.8"
+tui-input = "0.15.5"
 url = "2.5.8"
 
 [dev-dependencies]

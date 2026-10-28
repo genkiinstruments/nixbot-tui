@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Cell, Clear, Paragraph, Row as TableRow, Table, Wrap},
+    widgets::{Block, Cell, Clear, List, ListState, Paragraph, Row as TableRow, Table, Wrap},
 };
 
 use crate::{
@@ -14,7 +14,8 @@ use crate::{
     format::{age, glyph, progress_text, queue_note, short_sha},
 };
 
-const LIST_KEYS: &str = "j/k move · ⏎ open · a active only · r restart · c cancel · o PR · b build page · ? help · q quit";
+const LIST_KEYS: &str = "j/k move · ⏎ open · / search · p repo · a active only · r restart · \
+     c cancel · o PR · b build page · ? help · q quit";
 const DETAIL_KEYS: &str = "⏎ log · f follow · Tab pane · / filter · r/c item · R/C build · \
      E/X effects · o PR · ? help · q back";
 const LOG_KEYS: &str = "f follow · j/k scroll · g/G top/end · r/c restart/cancel · o web · q back";
@@ -57,7 +58,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         LIST_KEYS
     };
 
-    frame.render_widget(Line::from(keys).dark_gray(), footer);
+    if app.log.is_none() && app.detail.is_none() && app.is_editing_search {
+        let line = Line::from(vec![Span::from("/").bold(), Span::from(app.search.value())]);
+        frame.render_widget(line, footer);
+        let cursor = u16::try_from(app.search.visual_cursor()).unwrap_or(u16::MAX);
+        frame.set_cursor_position((footer.x.saturating_add(1).saturating_add(cursor), footer.y));
+    } else {
+        frame.render_widget(Line::from(keys).dark_gray(), footer);
+    }
 
     match &app.modal {
         Some(Modal::Confirm { key, action }) => {
@@ -68,19 +76,46 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             ]);
             popup(frame, " confirm ", text, 60);
         }
+        Some(Modal::Repos { repos, selected }) => draw_repos(frame, repos, *selected),
         Some(Modal::Help) => popup(frame, " keys ", help(), 76),
         None => {}
     }
 }
 
+fn draw_repos(frame: &mut Frame, repos: &[crate::api::RepoRef], selected: usize) {
+    let items: Vec<String> = std::iter::once("all repos".to_owned())
+        .chain(repos.iter().map(ToString::to_string))
+        .collect();
+    let height = u16::try_from(items.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(2);
+    let [area] = Layout::horizontal([Constraint::Length(48)])
+        .flex(Flex::Center)
+        .areas(frame.area());
+    let [area] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(area);
+    let list = List::new(items).highlight_style(Modifier::REVERSED).block(
+        Block::bordered()
+            .title(" repository ")
+            .border_style(Color::Cyan),
+    );
+
+    frame.render_widget(Clear, area);
+    frame.render_stateful_widget(
+        list,
+        area,
+        &mut ListState::default().with_selected(Some(selected)),
+    );
+}
+
 fn header_line(app: &App) -> Line<'_> {
-    let building = app
-        .rows
+    let visible = app.visible_rows();
+    let building = visible
         .iter()
         .filter(|r| r.build.status.is_active())
         .count();
-    let running_effects = app
-        .rows
+    let running_effects = visible
         .iter()
         .filter(|r| !r.build.status.is_active() && r.effects.is_some_and(|e| e.is_active()))
         .count();
@@ -94,6 +129,15 @@ fn header_line(app: &App) -> Line<'_> {
             " {building} building · {running_effects} running effects · showing {scope} "
         )),
     ];
+
+    if let Some(repo) = &app.repo {
+        spans.push(Span::from(format!(" repo {repo} ")).black().on_cyan());
+    }
+
+    if !app.search.value().is_empty() {
+        let search = format!(" search {:?} ", app.search.value());
+        spans.push(Span::from(search).black().on_cyan());
+    }
 
     if let Some(err) = &app.rows_error {
         spans.push(Span::from(format!(" {err} ")).red());
@@ -137,9 +181,13 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let now = Timestamp::now();
     let block = Block::bordered().title(" builds ");
 
-    if app.rows.is_empty() {
+    let visible = app.visible_rows();
+
+    if visible.is_empty() {
+        let is_filtered = app.repo.is_some() || !app.search.value().is_empty();
         let text = match (app.is_loaded, app.scope) {
             (false, _) => "loading…",
+            _ if is_filtered => "no builds match · Esc clears the search, p picks the repo",
             (true, Scope::Active) => "nothing building or running effects · a shows recent builds",
             (true, Scope::Recent) => "no builds",
         };
@@ -148,19 +196,14 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let width = |text: &str| u16::try_from(text.chars().count()).unwrap_or(u16::MAX);
-    let repo_width = app
-        .rows
-        .iter()
-        .map(|r| width(&r.key.repo.to_string()))
-        .max();
-    let branch_width = app.rows.iter().map(|r| width(&r.build.branch)).max();
+    let repo_width = visible.iter().map(|r| width(&r.key.repo.to_string())).max();
+    let branch_width = visible.iter().map(|r| width(&r.build.branch)).max();
     let (repo_width, branch_width) = (
         repo_width.unwrap_or(0).max(4),
         branch_width.unwrap_or(0).max(6),
     );
 
-    let rows: Vec<TableRow> = app
-        .rows
+    let rows: Vec<TableRow> = visible
         .iter()
         .map(|row| {
             let Row { key, build, .. } = row;
@@ -322,7 +365,7 @@ fn duration(started: Option<Timestamp>, finished: Option<Timestamp>) -> String {
 
 fn draw_attrs(frame: &mut Frame, area: Rect, view: &mut DetailView) {
     let attrs = view.visible_attrs();
-    let filter = match (&view.filter, view.is_editing_filter) {
+    let filter = match (view.filter.value(), view.is_editing_filter) {
         (filter, true) => format!(" /{filter}▏"),
         (filter, false) if !filter.is_empty() => format!(" /{filter}"),
         _ => String::new(),
@@ -496,6 +539,11 @@ fn help() -> Text<'static> {
         section("builds"),
         key("j/k ↑/↓ g/G", "move, first, last"),
         key("⏎ l", "open the build"),
+        key(
+            "/",
+            "search: PR, branch, number, status, attribute or effect",
+        ),
+        key("p", "pick the repository, or all of them"),
         key("a", "only builds still building or running effects, or all"),
         key("r / c", "restart / cancel the build"),
         key("o / b", "open the pull request / the build page"),

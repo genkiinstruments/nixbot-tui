@@ -5,5 +5,6 @@ pub mod config;
 pub mod format;
 pub mod jump;
 pub mod runtime;
+pub mod search;
 pub mod tasks;
 pub mod ui;

@@ -160,19 +160,8 @@ pub async fn resolve(
             .and_then(RepoSpec::from_remote)
             .context("not in a git checkout with an origin remote: pass -R forge/owner/name")?,
     };
-
-    let repos = try_join_all(clients.iter().map(Client::repos)).await?;
-    let (host, client, Repo { repo, url, .. }) = clients
-        .iter()
-        .zip(&repos)
-        .enumerate()
-        .find_map(|(host, (client, repos))| Some((host, client, spec.find(repos)?.clone())))
-        .with_context(|| {
-            format!(
-                "repository {}/{} is not known to the configured servers",
-                spec.owner, spec.name
-            )
-        })?;
+    let (host, Repo { repo, url, .. }) = find_repo(clients, &spec).await?;
+    let client = &clients[host];
 
     let detail = client
         .build(&repo, number)
@@ -198,6 +187,26 @@ pub async fn resolve(
         jump,
         should_follow,
     })
+}
+
+/// A `-R` repository on whichever configured host knows it, with the host's index.
+pub async fn resolve_repo(clients: &[Client], spec: &str) -> Result<(usize, Repo)> {
+    find_repo(clients, &RepoSpec::parse(spec)?).await
+}
+
+async fn find_repo(clients: &[Client], spec: &RepoSpec) -> Result<(usize, Repo)> {
+    let repos = try_join_all(clients.iter().map(Client::repos)).await?;
+
+    repos
+        .iter()
+        .enumerate()
+        .find_map(|(host, repos)| Some((host, spec.find(repos)?.clone())))
+        .with_context(|| {
+            format!(
+                "repository {}/{} is not known to the configured servers",
+                spec.owner, spec.name
+            )
+        })
 }
 
 #[cfg(test)]
@@ -279,5 +288,37 @@ mod tests {
         assert_eq!(match_effect(effects, "linux").unwrap().name, "report-linux");
         let err = match_effect(effects, "report").unwrap_err().to_string();
         assert!(err.contains("ambiguous"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn a_repo_resolves_on_the_host_that_knows_it() {
+        let empty = MockServer::start().await;
+        Mock::given(path("/api/repos"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw("[]", "application/json"))
+            .mount(&empty)
+            .await;
+        let known = MockServer::start().await;
+        Mock::given(path("/api/repos"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                include_str!("../tests/fixtures/repos.json"),
+                "application/json",
+            ))
+            .mount(&known)
+            .await;
+        let clients = [
+            Client::new(&empty.uri(), None).unwrap(),
+            Client::new(&known.uri(), None).unwrap(),
+        ];
+
+        let (host, repo) = resolve_repo(&clients, "Example/Website").await.unwrap();
+        assert_eq!((host, repo.repo.to_string()), (1, "example/website".into()));
+        assert!(resolve_repo(&clients, "example/elsewhere").await.is_err());
     }
 }
