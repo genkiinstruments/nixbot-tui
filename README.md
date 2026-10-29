@@ -50,7 +50,7 @@ logged in.
 
 | Where    | Key              | Action                                              |
 | -------- | ---------------- | --------------------------------------------------- |
-| builds   | `j`/`k`, `↑`/`↓` | move (`g`/`G` first/last)                           |
+| builds   | `j`/`k`, `[`/`]`, `↑`/`↓` | move (`g`/`G` first/last)                  |
 |          | `/`              | search: PR title or number, branch, build number, status, attribute or effect name (fzf syntax: `'exact`, `!not`) |
 |          | `p`              | show one repository, or all                         |
 |          | `⏎`              | open the build                                      |
@@ -58,6 +58,7 @@ logged in.
 |          | `r` / `c`        | restart / cancel the build                          |
 |          | `o` / `b`        | open the pull request / the build page              |
 | build    | `Tab`            | switch between attributes and effects               |
+|          | `[` / `]`        | the previous / next build in the list, in the same pane |
 |          | `⏎` / `f`        | show the log / follow it live                       |
 |          | `/`              | filter attributes                                   |
 |          | `r` / `c`        | restart / cancel the selected attribute or effect   |

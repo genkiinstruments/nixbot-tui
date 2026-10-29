@@ -16,8 +16,8 @@ use crate::{
 
 const LIST_KEYS: &str = "j/k move · ⏎ open · / search · p repo · a active only · r restart · \
      c cancel · o PR · b build page · ? help · q quit";
-const DETAIL_KEYS: &str = "⏎ log · f follow · Tab pane · / filter · r/c item · R/C build · \
-     E/X effects · o PR · ? help · q back";
+const DETAIL_KEYS: &str = "⏎ log · f follow · Tab pane · [/] build · / filter · r/c item · \
+     R/C build · E/X effects · o PR · ? help · q back";
 const LOG_KEYS: &str =
     "f follow · j/k scroll · g/G top/end · [/] previous/next · r/c restart/cancel · o web · q back";
 const CONFIRM_KEYS: &str = "⏎ confirm · Esc cancel";
@@ -541,7 +541,7 @@ fn help() -> Text<'static> {
 
     Text::from(vec![
         section("builds"),
-        key("j/k ↑/↓ g/G", "move, first, last"),
+        key("j/k [/] g/G", "move, first, last"),
         key("⏎ l", "open the build"),
         key(
             "/",
@@ -553,6 +553,7 @@ fn help() -> Text<'static> {
         key("o / b", "open the pull request / the build page"),
         section("build"),
         key("Tab", "switch between attributes and effects"),
+        key("[ / ]", "the previous / next build in the list"),
         key("⏎ / f", "show the log / follow it live"),
         key("/", "filter attributes"),
         key("r / c", "restart / cancel the selected attribute or effect"),

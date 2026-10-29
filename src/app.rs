@@ -731,8 +731,8 @@ impl App {
                     .map_or(0, |i| i + 1);
                 self.modal = Some(Modal::Repos { repos, selected });
             }
-            Char('j') | Down => self.select_row(|i| i.saturating_add(1)),
-            Char('k') | Up => self.select_row(|i| i.saturating_sub(1)),
+            Char('j' | ']') | Down => self.select_row(|i| i.saturating_add(1)),
+            Char('k' | '[') | Up => self.select_row(|i| i.saturating_sub(1)),
             Char('g') | Home => self.select_row(|_| 0),
             Char('G') | End => self.select_row(|_| usize::MAX),
             Char('a') => {
@@ -834,6 +834,38 @@ impl App {
         vec![Cmd::LoadDetail(key)]
     }
 
+    /// Opens the build before or after this one in the list as shown, as going back, moving
+    /// with k/j and opening it would; the pane stays and starts at its top.
+    fn step_build(&mut self, delta: isize) -> Vec<Cmd> {
+        let Some(view) = &self.detail else {
+            return vec![];
+        };
+
+        let pane = view.pane;
+        let visible = self.visible_rows();
+        let Some(current) = visible.iter().position(|r| r.key == view.row.key) else {
+            return vec![];
+        };
+
+        let next = current
+            .saturating_add_signed(delta)
+            .min(visible.len().saturating_sub(1));
+
+        if next == current {
+            return vec![];
+        }
+
+        let row = visible[next].clone();
+        self.table.select(Some(next));
+        let cmds = self.open_detail(row);
+
+        if let Some(view) = &mut self.detail {
+            view.pane = pane;
+        }
+
+        cmds
+    }
+
     fn on_detail_key(&mut self, key: KeyEvent) -> Vec<Cmd> {
         use KeyCode::*;
 
@@ -874,6 +906,8 @@ impl App {
                 return self.open_log(is_active);
             }
             Char('f') => return self.open_log(true),
+            Char('[') => return self.step_build(-1),
+            Char(']') => return self.step_build(1),
             Char(c @ ('r' | 'c')) => {
                 if let Some((target, is_active)) = view.selected_target() {
                     let key = view.row.key.clone();
@@ -1169,6 +1203,10 @@ impl DetailView {
         row.effects = Some(EffectSummary::of(effects));
         *shown = Some(detail);
         *error = None;
+
+        if self.pane == Pane::Effects && self.effects().is_empty() {
+            self.pane = Pane::Attrs;
+        }
 
         let (attr_index, attrs_len) = {
             let visible = self.visible_attrs();

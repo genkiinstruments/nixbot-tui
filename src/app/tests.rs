@@ -1056,3 +1056,68 @@ fn brackets_stay_among_the_effects() {
     type_keys(&mut app, "[");
     assert_eq!(type_keys(&mut app, "["), [], "the first one stays");
 }
+
+fn detail_number(app: &App) -> u64 {
+    app.detail.as_ref().unwrap().row.key.number
+}
+
+#[test]
+fn brackets_step_through_builds_in_the_detail_and_stop_at_the_ends() {
+    let (mut app, _) = loaded();
+    type_keys(&mut app, "j");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(detail_number(&app), 121);
+
+    let cmds = type_keys(&mut app, "]");
+    assert_eq!(detail_number(&app), 120);
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::LoadDetail(key)] if key.number == 120),
+        "{cmds:?}"
+    );
+    assert_eq!(
+        app.selected_row().unwrap().key.number,
+        120,
+        "the list moves along"
+    );
+    assert_eq!(type_keys(&mut app, "]"), [], "the last build stays");
+
+    type_keys(&mut app, "[[");
+    assert_eq!(detail_number(&app), 122);
+    assert_eq!(type_keys(&mut app, "["), [], "the first build stays");
+}
+
+#[test]
+fn stepping_builds_keeps_the_pane_and_starts_it_at_the_top() {
+    let (mut app, _) = loaded();
+    open_effects(&mut app);
+    type_keys(&mut app, "j");
+
+    type_keys(&mut app, "]");
+    let key = app.detail.as_ref().unwrap().row.key.clone();
+    app.update(Msg::Detail(key, Ok(Box::new(effects_detail()))));
+    let view = app.detail.as_ref().unwrap();
+    assert_eq!(view.pane, Pane::Effects);
+    assert_eq!(view.effects.selected(), Some(0));
+}
+
+#[test]
+fn stepping_builds_goes_by_the_filtered_list() {
+    let (mut app, _) = loaded();
+    type_keys(&mut app, "/main");
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(detail_number(&app), 122);
+
+    type_keys(&mut app, "]");
+    assert_eq!(detail_number(&app), 121);
+    assert_eq!(type_keys(&mut app, "]"), [], "120 is not in the search");
+}
+
+#[test]
+fn brackets_move_the_list_selection_like_k_and_j() {
+    let (mut app, _) = loaded();
+    type_keys(&mut app, "]]");
+    assert_eq!(app.table.selected(), Some(2));
+    type_keys(&mut app, "[");
+    assert_eq!(app.table.selected(), Some(1));
+}
