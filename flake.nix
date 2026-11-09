@@ -29,6 +29,10 @@
             ];
           };
           cargoLock.lockFile = ./Cargo.lock;
+          # rustls links aws-lc-sys, which buildRustPackage tells to use the system AWS-LC
+          # instead of compiling its vendored copy.
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = [ pkgs.aws-lc ];
           # The client tests talk to a wiremock server on loopback.
           __darwinAllowLocalNetworking = true;
           # reqwest loads the system roots when a client is built, even for plain http.
